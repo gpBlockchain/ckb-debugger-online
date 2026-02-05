@@ -8,6 +8,7 @@ import {
   MockTxParamsEditor,
   OutputConsole,
   ExampleSelector,
+  TxFetcher,
   useToast,
   type UploadedFile,
   type BinaryParams,
@@ -210,6 +211,24 @@ function App() {
                 />
               ) : (
                 <>
+                  {/* 从链上获取交易 */}
+                  <TxFetcher
+                    onMockTxReady={(file) => {
+                      setMockTxFile(file);
+                      toast.addToast("success", "MockTx 已生成");
+                    }}
+                    disabled={debugger_.isRunning}
+                  />
+                  
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-gray-200" />
+                    </div>
+                    <div className="relative flex justify-center text-xs">
+                      <span className="bg-white px-2 text-gray-400">或手动上传文件</span>
+                    </div>
+                  </div>
+                  
                   <FileUploader
                     label="Mock TX JSON"
                     accept=".json"
