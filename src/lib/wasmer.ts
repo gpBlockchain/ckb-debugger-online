@@ -486,3 +486,280 @@ export async function checkWasmAvailability(): Promise<{ available: boolean; err
     };
   }
 }
+
+/**
+ * 脚本组信息
+ */
+interface ScriptGroup {
+  scriptHash: string;
+  scriptGroupType: "lock" | "type";
+  inputIndices: number[];
+  outputIndices: number[];
+  script: { code_hash: string; hash_type: string; args: string };
+}
+
+/**
+ * 一键执行结果
+ */
+export interface RunAllResult {
+  totalCycles: number;
+  groups: Array<{
+    scriptGroupType: "lock" | "type";
+    scriptHash: string;
+    inputIndices: number[];
+    outputIndices: number[];
+    cycles: number;
+    success: boolean;
+    error?: string;
+  }>;
+  allSuccess: boolean;
+  duration: number;
+  formattedOutput: string;
+}
+
+/**
+ * 从 MockTx 中提取所有脚本组
+ */
+function extractAllScriptGroups(mockTxObj: Record<string, unknown>): ScriptGroup[] {
+  const groups: Map<string, ScriptGroup> = new Map();
+  
+  const mockInfo = mockTxObj.mock_info as Record<string, unknown>;
+  const tx = mockTxObj.tx as Record<string, unknown>;
+  
+  if (!mockInfo || !tx) return [];
+  
+  // 提取 inputs 的 lock 和 type 脚本
+  const inputs = mockInfo.inputs as Array<Record<string, unknown>>;
+  if (inputs) {
+    inputs.forEach((input, index) => {
+      const output = input.output as Record<string, unknown>;
+      if (!output) return;
+      
+      // Lock 脚本
+      const lockScript = output.lock as Record<string, unknown>;
+      if (lockScript) {
+        const script = {
+          code_hash: lockScript.code_hash as string,
+          hash_type: lockScript.hash_type as string,
+          args: lockScript.args as string,
+        };
+        const hash = computeScriptHash(script);
+        const key = `lock:${hash}`;
+        
+        if (groups.has(key)) {
+          groups.get(key)!.inputIndices.push(index);
+        } else {
+          groups.set(key, {
+            scriptHash: hash,
+            scriptGroupType: "lock",
+            inputIndices: [index],
+            outputIndices: [],
+            script,
+          });
+        }
+      }
+      
+      // Type 脚本 (input)
+      const typeScript = output.type as Record<string, unknown>;
+      if (typeScript) {
+        const script = {
+          code_hash: typeScript.code_hash as string,
+          hash_type: typeScript.hash_type as string,
+          args: typeScript.args as string,
+        };
+        const hash = computeScriptHash(script);
+        const key = `type:${hash}`;
+        
+        if (groups.has(key)) {
+          groups.get(key)!.inputIndices.push(index);
+        } else {
+          groups.set(key, {
+            scriptHash: hash,
+            scriptGroupType: "type",
+            inputIndices: [index],
+            outputIndices: [],
+            script,
+          });
+        }
+      }
+    });
+  }
+  
+  // 提取 outputs 的 type 脚本
+  const outputs = tx.outputs as Array<Record<string, unknown>>;
+  if (outputs) {
+    outputs.forEach((output, index) => {
+      const typeScript = output.type as Record<string, unknown>;
+      if (typeScript) {
+        const script = {
+          code_hash: typeScript.code_hash as string,
+          hash_type: typeScript.hash_type as string,
+          args: typeScript.args as string,
+        };
+        const hash = computeScriptHash(script);
+        const key = `type:${hash}`;
+        
+        if (groups.has(key)) {
+          groups.get(key)!.outputIndices.push(index);
+        } else {
+          groups.set(key, {
+            scriptHash: hash,
+            scriptGroupType: "type",
+            inputIndices: [],
+            outputIndices: [index],
+            script,
+          });
+        }
+      }
+    });
+  }
+  
+  return Array.from(groups.values());
+}
+
+/**
+ * 一键执行 MockTx 中的所有脚本组
+ */
+export async function runAllScriptGroups(params: {
+  mockTx: Uint8Array;
+  maxCycles?: number;
+  binaryReplacement?: {
+    content: Uint8Array;
+    name: string;
+  };
+}): Promise<RunAllResult> {
+  const { mockTx, maxCycles = 3500000000, binaryReplacement } = params;
+  const startTime = performance.now();
+  
+  // 确保已初始化
+  await initializeWasmer();
+  
+  // 解析 mock_tx JSON
+  const decoder = new TextDecoder();
+  const mockTxStr = decoder.decode(mockTx);
+  const mockTxObj = JSON.parse(mockTxStr);
+  
+  // 如果有二进制替换，应用替换
+  if (binaryReplacement) {
+    // 获取第一个脚本来确定 code_hash
+    const groups = extractAllScriptGroups(mockTxObj);
+    if (groups.length > 0) {
+      replaceBinaryInMockTx(
+        mockTxObj,
+        groups[0].script.code_hash,
+        groups[0].script.hash_type,
+        binaryReplacement.content
+      );
+    }
+  }
+  
+  // 提取所有脚本组
+  const scriptGroups = extractAllScriptGroups(mockTxObj);
+  
+  if (scriptGroups.length === 0) {
+    return {
+      totalCycles: 0,
+      groups: [],
+      allSuccess: false,
+      duration: performance.now() - startTime,
+      formattedOutput: "错误：未找到任何脚本组",
+    };
+  }
+  
+  // 将修改后的 mockTxObj 转回字符串
+  const finalMockTxStr = JSON.stringify(mockTxObj);
+  
+  // 执行每个脚本组
+  const results: RunAllResult["groups"] = [];
+  let totalCycles = 0;
+  let allSuccess = true;
+  
+  for (const group of scriptGroups) {
+    try {
+      const result = run_json(
+        finalMockTxStr,
+        group.scriptGroupType,
+        group.scriptHash,
+        String(maxCycles)
+      );
+      
+      const parsedResult = JSON.parse(result) as { cycle: number | null; error: string | null };
+      const success = parsedResult.error === null;
+      const cycles = parsedResult.cycle || 0;
+      
+      if (success) {
+        totalCycles += cycles;
+      } else {
+        allSuccess = false;
+      }
+      
+      results.push({
+        scriptGroupType: group.scriptGroupType,
+        scriptHash: group.scriptHash,
+        inputIndices: group.inputIndices,
+        outputIndices: group.outputIndices,
+        cycles,
+        success,
+        error: parsedResult.error || undefined,
+      });
+    } catch (error) {
+      allSuccess = false;
+      results.push({
+        scriptGroupType: group.scriptGroupType,
+        scriptHash: group.scriptHash,
+        inputIndices: group.inputIndices,
+        outputIndices: group.outputIndices,
+        cycles: 0,
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  
+  const duration = performance.now() - startTime;
+  
+  // 格式化输出
+  let formattedOutput = "";
+  
+  if (allSuccess) {
+    formattedOutput += `✓ 交易验证成功\n\n`;
+  } else {
+    formattedOutput += `✗ 交易验证失败\n\n`;
+  }
+  
+  formattedOutput += `Total cycles: ${totalCycles.toLocaleString()}\n`;
+  
+  // 先输出 Lock 脚本组
+  const lockGroups = results.filter(r => r.scriptGroupType === "lock");
+  for (const group of lockGroups) {
+    formattedOutput += `Lock with inputs: [${group.inputIndices.join(", ")}], outputs: []\n`;
+    formattedOutput += `  Script hash: ${group.scriptHash.slice(2)}\n`;
+    if (group.success) {
+      formattedOutput += `  Cycles: ${group.cycles.toLocaleString()}\n`;
+    } else {
+      formattedOutput += `  Error: ${group.error}\n`;
+    }
+  }
+  
+  // 再输出 Type 脚本组
+  const typeGroups = results.filter(r => r.scriptGroupType === "type");
+  for (const group of typeGroups) {
+    formattedOutput += `Type with inputs: [${group.inputIndices.join(", ")}], outputs: [${group.outputIndices.join(", ")}]\n`;
+    formattedOutput += `  Script hash: ${group.scriptHash.slice(2)}\n`;
+    if (group.success) {
+      formattedOutput += `  Cycles: ${group.cycles.toLocaleString()}\n`;
+    } else {
+      formattedOutput += `  Error: ${group.error}\n`;
+    }
+  }
+  
+  formattedOutput += `\n执行时间: ${(duration / 1000).toFixed(2)}s`;
+  
+  return {
+    totalCycles,
+    groups: results,
+    allSuccess,
+    duration,
+    formattedOutput,
+  };
+}

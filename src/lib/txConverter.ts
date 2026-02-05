@@ -562,3 +562,49 @@ export function mockTxToBytes(mockTx: MockTx): Uint8Array {
   const encoder = new TextEncoder();
   return encoder.encode(jsonStr);
 }
+
+/**
+ * 从 TransactionView (molecule 序列化的十六进制) 解析交易
+ * 支持格式：
+ * - 0x... (直接的 hex 字符串)
+ * - TransactionView { data: Transaction(0x...) } (带包装的格式)
+ */
+export function parseTransactionView(input: string): ccc.Transaction {
+  let hexData = input.trim();
+  
+  // 尝试提取 Transaction(...) 中的内容
+  const transactionMatch = hexData.match(/Transaction\s*\(\s*(0x[a-fA-F0-9]+)\s*\)/i);
+  if (transactionMatch) {
+    hexData = transactionMatch[1];
+  }
+  
+  // 尝试提取 data: ... 中的内容
+  const dataMatch = hexData.match(/data:\s*(0x[a-fA-F0-9]+)/i);
+  if (dataMatch) {
+    hexData = dataMatch[1];
+  }
+  
+  // 确保有 0x 前缀
+  if (!hexData.startsWith("0x") && !hexData.startsWith("0X")) {
+    // 检查是否是纯十六进制
+    if (/^[a-fA-F0-9]+$/.test(hexData)) {
+      hexData = "0x" + hexData;
+    } else {
+      throw new Error("无效的 TransactionView 格式，请输入十六进制数据");
+    }
+  }
+  
+  // 转换为字节数组
+  const bytes = hexToBytes(hexData);
+  
+  if (bytes.length < 4) {
+    throw new Error("TransactionView 数据太短");
+  }
+  
+  // 使用 CCC SDK 解析 molecule 格式的交易
+  try {
+    return ccc.Transaction.fromBytes(bytes);
+  } catch (e) {
+    throw new Error(`解析 TransactionView 失败: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}

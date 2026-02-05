@@ -3,10 +3,12 @@ import {
   initializeWasmer,
   runBinaryMode,
   runMockTxMode,
+  runAllScriptGroups,
   checkWasmAvailability,
   type DebuggerResult,
   type BinaryModeParams,
   type MockTxModeParams,
+  type RunAllResult,
 } from "../lib/wasmer";
 
 export type DebuggerMode = "binary" | "mockTx";
@@ -26,6 +28,16 @@ export interface DebuggerState {
   wasmAvailable: boolean;
 }
 
+/** 一键执行参数 */
+export interface RunAllParams {
+  mockTx: Uint8Array;
+  maxCycles?: number;
+  binaryReplacement?: {
+    content: Uint8Array;
+    name: string;
+  };
+}
+
 export interface UseDebuggerReturn extends DebuggerState {
   /** 设置模式 */
   setMode: (mode: DebuggerMode) => void;
@@ -33,6 +45,8 @@ export interface UseDebuggerReturn extends DebuggerState {
   runBinary: (params: BinaryModeParams) => Promise<DebuggerResult>;
   /** 运行 Mock TX 模式 */
   runMockTx: (params: MockTxModeParams) => Promise<DebuggerResult>;
+  /** 一键执行所有脚本组 */
+  runAllScripts: (params: RunAllParams) => Promise<RunAllResult>;
   /** 清除结果 */
   clearResult: () => void;
   /** 重新初始化 */
@@ -103,6 +117,27 @@ export function useDebugger(): UseDebuggerReturn {
     }
   }, []);
 
+  // 一键执行所有脚本组
+  const runAllScripts = useCallback(async (params: RunAllParams): Promise<RunAllResult> => {
+    setIsRunning(true);
+    setResult(null);
+    
+    try {
+      const allResult = await runAllScriptGroups(params);
+      // 将结果转换为 DebuggerResult 格式以便显示
+      setResult({
+        stdout: allResult.formattedOutput,
+        stderr: allResult.allSuccess ? '' : '部分脚本执行失败',
+        exitCode: allResult.allSuccess ? 0 : 1,
+        success: allResult.allSuccess,
+        duration: allResult.duration,
+      });
+      return allResult;
+    } finally {
+      setIsRunning(false);
+    }
+  }, []);
+
   // 清除结果
   const clearResult = useCallback(() => {
     setResult(null);
@@ -124,6 +159,7 @@ export function useDebugger(): UseDebuggerReturn {
     setMode,
     runBinary,
     runMockTx,
+    runAllScripts,
     clearResult,
     reinitialize,
   };

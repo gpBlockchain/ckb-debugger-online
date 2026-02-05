@@ -95,6 +95,32 @@ function App() {
     }
   }, [debugger_, binaryFile, mockTxFile, replacementFile, binaryParams, mockTxParams, toast]);
 
+  // 一键执行所有脚本组
+  const handleRunAll = useCallback(async () => {
+    if (!mockTxFile) {
+      toast.addToast("warning", "请先上传 mock_tx.json 文件");
+      return;
+    }
+    
+    try {
+      const result = await debugger_.runAllScripts({
+        mockTx: mockTxFile.content,
+        maxCycles: mockTxParams.maxCycles,
+        binaryReplacement: replacementFile
+          ? { content: replacementFile.content, name: replacementFile.name }
+          : undefined,
+      });
+      
+      if (result.allSuccess) {
+        toast.addToast("success", `验证成功，总 Cycles: ${result.totalCycles.toLocaleString()}`);
+      } else {
+        toast.addToast("error", "部分脚本执行失败");
+      }
+    } catch (error) {
+      toast.addToast("error", `执行出错: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [debugger_, mockTxFile, replacementFile, mockTxParams.maxCycles, toast]);
+
   // 监听初始化状态
   useEffect(() => {
     if (debugger_.isInitialized && debugger_.wasmAvailable) {
@@ -268,31 +294,61 @@ function App() {
             </div>
 
             {/* 运行按钮 */}
-            <button
-              onClick={handleRun}
-              disabled={!canRun}
-              className={`
-                w-full py-3 px-4 rounded-lg font-medium text-white
-                flex items-center justify-center space-x-2
-                transition-colors
-                ${canRun
-                  ? "bg-blue-600 hover:bg-blue-700"
-                  : "bg-gray-400 cursor-not-allowed"
-                }
-              `}
-            >
-              {debugger_.isRunning ? (
-                <>
-                  <ArrowPathIcon className="h-5 w-5 animate-spin" />
-                  <span>运行中...</span>
-                </>
-              ) : (
-                <>
-                  <PlayIcon className="h-5 w-5" />
-                  <span>运行调试器</span>
-                </>
+            <div className="flex space-x-3">
+              <button
+                onClick={handleRun}
+                disabled={!canRun}
+                className={`
+                  flex-1 py-3 px-4 rounded-lg font-medium text-white
+                  flex items-center justify-center space-x-2
+                  transition-colors
+                  ${canRun
+                    ? "bg-blue-600 hover:bg-blue-700"
+                    : "bg-gray-400 cursor-not-allowed"
+                  }
+                `}
+              >
+                {debugger_.isRunning ? (
+                  <>
+                    <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                    <span>运行中...</span>
+                  </>
+                ) : (
+                  <>
+                    <PlayIcon className="h-5 w-5" />
+                    <span>运行单个脚本</span>
+                  </>
+                )}
+              </button>
+              
+              {debugger_.mode === "mockTx" && (
+                <button
+                  onClick={handleRunAll}
+                  disabled={!canRun}
+                  className={`
+                    flex-1 py-3 px-4 rounded-lg font-medium text-white
+                    flex items-center justify-center space-x-2
+                    transition-colors
+                    ${canRun
+                      ? "bg-green-600 hover:bg-green-700"
+                      : "bg-gray-400 cursor-not-allowed"
+                    }
+                  `}
+                >
+                  {debugger_.isRunning ? (
+                    <>
+                      <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                      <span>运行中...</span>
+                    </>
+                  ) : (
+                    <>
+                      <PlayIcon className="h-5 w-5" />
+                      <span>一键执行全部</span>
+                    </>
+                  )}
+                </button>
               )}
-            </button>
+            </div>
           </div>
 
           {/* 右侧：输出面板 */}

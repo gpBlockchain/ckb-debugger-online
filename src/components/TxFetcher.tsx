@@ -18,6 +18,7 @@ import {
   fetchTransaction,
   convertToMockTx,
   parseRawTxJson,
+  parseTransactionView,
   mockTxToBytes,
 } from "../lib/txConverter";
 
@@ -28,7 +29,7 @@ interface TxFetcherProps {
   disabled?: boolean;
 }
 
-type InputMode = "hash" | "json";
+type InputMode = "hash" | "json" | "molecule";
 
 export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
   // 网络配置
@@ -41,6 +42,7 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
   // 输入值
   const [txHash, setTxHash] = useState("");
   const [rawTxJson, setRawTxJson] = useState("");
+  const [moleculeHex, setMoleculeHex] = useState("");
   
   // 状态
   const [isLoading, setIsLoading] = useState(false);
@@ -148,6 +150,46 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
       setIsLoading(false);
     }
   }, [rawTxJson, network, customRpc, onMockTxReady]);
+
+  // 从 TransactionView (molecule hex) 转换
+  const handleConvertFromMolecule = useCallback(async () => {
+    if (!moleculeHex.trim()) {
+      setError("请输入 TransactionView 数据");
+      return;
+    }
+
+    if (network === "custom" && !customRpc.trim()) {
+      setError("请输入自定义 RPC 地址");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setSuccess(false);
+    setProgress({ stage: "fetching_tx", current: 0, total: 1, message: "正在解析 TransactionView..." });
+
+    try {
+      const tx = parseTransactionView(moleculeHex);
+      const client = createClient(network, customRpc);
+      
+      const mockTx = await convertToMockTx(client, tx, setProgress);
+      const content = mockTxToBytes(mockTx);
+      
+      onMockTxReady({
+        name: `mock_tx_from_view.json`,
+        content,
+        size: content.length,
+      });
+      
+      setSuccess(true);
+      setProgress(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setProgress(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [moleculeHex, network, customRpc, onMockTxReady]);
 
   // 进度条组件
   const ProgressBar = () => {
@@ -259,10 +301,23 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
               <DocumentTextIcon className="h-4 w-4" />
               <span>Raw TX JSON</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setInputMode("molecule")}
+              disabled={disabled || isLoading}
+              className={`flex-1 flex items-center justify-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+                inputMode === "molecule"
+                  ? "bg-blue-50 text-blue-700 border-2 border-blue-500"
+                  : "bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100"
+              } disabled:opacity-50`}
+            >
+              <DocumentTextIcon className="h-4 w-4" />
+              <span>TransactionView</span>
+            </button>
           </div>
 
           {/* 输入区域 */}
-          {inputMode === "hash" ? (
+          {inputMode === "hash" && (
             <div>
               <label className="block text-xs text-gray-500 mb-1">交易哈希</label>
               <div className="flex space-x-2">
@@ -298,7 +353,8 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
                 </button>
               </div>
             </div>
-          ) : (
+          )}
+          {inputMode === "json" && (
             <div>
               <label className="block text-xs text-gray-500 mb-1">Raw Transaction JSON</label>
               <textarea
@@ -317,6 +373,41 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
                 type="button"
                 onClick={handleConvertFromJson}
                 disabled={disabled || isLoading || !rawTxJson.trim()}
+                className="mt-2 w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+              >
+                {isLoading ? (
+                  <>
+                    <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                    <span>转换中</span>
+                  </>
+                ) : (
+                  <>
+                    <ArrowDownTrayIcon className="h-4 w-4" />
+                    <span>转换为 MockTx</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+          {inputMode === "molecule" && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">TransactionView (Molecule Hex)</label>
+              <textarea
+                value={moleculeHex}
+                onChange={(e) => {
+                  setMoleculeHex(e.target.value);
+                  setError(null);
+                  setSuccess(false);
+                }}
+                placeholder="TransactionView { data: Transaction(0x...) } 或直接输入 0x..."
+                disabled={disabled || isLoading}
+                rows={6}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 resize-y"
+              />
+              <button
+                type="button"
+                onClick={handleConvertFromMolecule}
+                disabled={disabled || isLoading || !moleculeHex.trim()}
                 className="mt-2 w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
               >
                 {isLoading ? (
