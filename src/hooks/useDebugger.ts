@@ -1,21 +1,15 @@
 import { useState, useCallback, useEffect } from "react";
 import {
   initializeWasmer,
-  runBinaryMode,
   runMockTxMode,
   runAllScriptGroups,
   checkWasmAvailability,
   type DebuggerResult,
-  type BinaryModeParams,
   type MockTxModeParams,
   type RunAllResult,
 } from "../lib/wasmer";
 
-export type DebuggerMode = "binary" | "mockTx";
-
 export interface DebuggerState {
-  /** 当前模式 */
-  mode: DebuggerMode;
   /** 是否正在运行 */
   isRunning: boolean;
   /** 是否已初始化 */
@@ -39,10 +33,6 @@ export interface RunAllParams {
 }
 
 export interface UseDebuggerReturn extends DebuggerState {
-  /** 设置模式 */
-  setMode: (mode: DebuggerMode) => void;
-  /** 运行 Binary 模式 */
-  runBinary: (params: BinaryModeParams) => Promise<DebuggerResult>;
   /** 运行 Mock TX 模式 */
   runMockTx: (params: MockTxModeParams) => Promise<DebuggerResult>;
   /** 一键执行所有脚本组 */
@@ -54,7 +44,6 @@ export interface UseDebuggerReturn extends DebuggerState {
 }
 
 export function useDebugger(): UseDebuggerReturn {
-  const [mode, setMode] = useState<DebuggerMode>("binary");
   const [isRunning, setIsRunning] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
@@ -88,20 +77,6 @@ export function useDebugger(): UseDebuggerReturn {
   useEffect(() => {
     initialize();
   }, [initialize]);
-
-  // 运行 Binary 模式
-  const runBinary = useCallback(async (params: BinaryModeParams): Promise<DebuggerResult> => {
-    setIsRunning(true);
-    setResult(null);
-    
-    try {
-      const debugResult = await runBinaryMode(params);
-      setResult(debugResult);
-      return debugResult;
-    } finally {
-      setIsRunning(false);
-    }
-  }, []);
 
   // 运行 Mock TX 模式
   const runMockTx = useCallback(async (params: MockTxModeParams): Promise<DebuggerResult> => {
@@ -150,14 +125,11 @@ export function useDebugger(): UseDebuggerReturn {
   }, [initialize]);
 
   return {
-    mode,
     isRunning,
     isInitialized,
     initError,
     result,
     wasmAvailable,
-    setMode,
-    runBinary,
     runMockTx,
     runAllScripts,
     clearResult,
