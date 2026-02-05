@@ -428,7 +428,7 @@ export async function convertToMockTx(
         daoBytes.set(arBytes, 8);
         daoBytes.set(sBytes, 16);
         daoBytes.set(uBytes, 24);
-        const daoHex = `0x${Array.from(daoBytes).map(b => b.toString(16).padStart(2, '0')).join('')}`;
+        const daoHex = ccc.hexFrom(daoBytes);
         
         mockHeaderDeps.push({
           compact_target: `0x${header.compactTarget.toString(16)}`,
