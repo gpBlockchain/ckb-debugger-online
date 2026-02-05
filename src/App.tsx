@@ -10,10 +10,12 @@ import {
   type UploadedFile,
   type MockTxParams,
 } from "./components";
+import { useI18n, LanguageSwitcher } from "./lib/i18n";
 
 function App() {
   const debugger_ = useDebugger();
   const toast = useToast();
+  const { t } = useI18n();
   
   // 文件状态
   const [mockTxFile, setMockTxFile] = useState<UploadedFile | null>(null);
@@ -30,7 +32,7 @@ function App() {
   // 运行调试器
   const handleRun = useCallback(async () => {
     if (!mockTxFile) {
-      toast.addToast("warning", "请先上传 mock_tx.json 文件");
+      toast.addToast("warning", t("error.uploadMockTx"));
       return;
     }
     
@@ -47,19 +49,19 @@ function App() {
       });
       
       if (result.success) {
-        toast.addToast("success", `执行成功 (${(result.duration / 1000).toFixed(2)}s)`);
+        toast.addToast("success", `${t("success.executionSuccess")} (${(result.duration / 1000).toFixed(2)}s)`);
       } else {
-        toast.addToast("error", `执行失败，退出码: ${result.exitCode}`);
+        toast.addToast("error", `${t("error.executionFailed")}: ${result.exitCode}`);
       }
     } catch (error) {
-      toast.addToast("error", `执行出错: ${error instanceof Error ? error.message : String(error)}`);
+      toast.addToast("error", `${t("error.executionError")}: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }, [debugger_, mockTxFile, replacementFile, mockTxParams, toast]);
+  }, [debugger_, mockTxFile, replacementFile, mockTxParams, toast, t]);
 
   // 一键执行所有脚本组
   const handleRunAll = useCallback(async () => {
     if (!mockTxFile) {
-      toast.addToast("warning", "请先上传 mock_tx.json 文件");
+      toast.addToast("warning", t("error.uploadMockTx"));
       return;
     }
     
@@ -73,20 +75,21 @@ function App() {
       });
       
       if (result.allSuccess) {
-        toast.addToast("success", `验证成功，总 Cycles: ${result.totalCycles.toLocaleString()}`);
+        toast.addToast("success", `${t("success.verificationSuccess")}: ${result.totalCycles.toLocaleString()}`);
       } else {
-        toast.addToast("error", "部分脚本执行失败");
+        toast.addToast("error", t("error.partialFailure"));
       }
     } catch (error) {
-      toast.addToast("error", `执行出错: ${error instanceof Error ? error.message : String(error)}`);
+      toast.addToast("error", `${t("error.executionError")}: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }, [debugger_, mockTxFile, replacementFile, mockTxParams.maxCycles, toast]);
+  }, [debugger_, mockTxFile, replacementFile, mockTxParams.maxCycles, toast, t]);
 
   // 监听初始化状态
   useEffect(() => {
     if (debugger_.isInitialized && debugger_.wasmAvailable) {
-      toast.addToast("success", "调试器已就绪");
+      toast.addToast("success", t("success.debuggerReady"));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debugger_.isInitialized, debugger_.wasmAvailable]);
 
   // 检查是否可以运行
@@ -99,17 +102,20 @@ function App() {
         <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">CKB Debugger Online</h1>
-              <p className="text-sm text-gray-500 mt-1">在浏览器中运行 CKB 合约调试器</p>
+              <h1 className="text-2xl font-bold text-gray-900">{t("app.title")}</h1>
+              <p className="text-sm text-gray-500 mt-1">{t("app.subtitle")}</p>
             </div>
-            <a
-              href="https://github.com/nervosnetwork/ckb-standalone-debugger"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-blue-600 hover:text-blue-800"
-            >
-              GitHub
-            </a>
+            <div className="flex items-center space-x-4">
+              <LanguageSwitcher />
+              <a
+                href="https://github.com/nervosnetwork/ckb-standalone-debugger"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-blue-600 hover:text-blue-800"
+              >
+                GitHub
+              </a>
+            </div>
           </div>
         </div>
       </header>
@@ -121,11 +127,11 @@ function App() {
           <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start space-x-3">
             <ExclamationTriangleIcon className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
             <div>
-              <h3 className="text-sm font-medium text-yellow-800">初始化警告</h3>
+              <h3 className="text-sm font-medium text-yellow-800">{t("warning.initWarning")}</h3>
               <p className="text-sm text-yellow-700 mt-1">{debugger_.initError}</p>
               {!debugger_.wasmAvailable && (
                 <p className="text-sm text-yellow-700 mt-2">
-                  请运行 <code className="bg-yellow-100 px-1 rounded">./scripts/build-wasm.sh</code> 编译 WASM 模块
+                  {t("warning.runWasmScript")} <code className="bg-yellow-100 px-1 rounded">./scripts/build-wasm.sh</code> {t("warning.toCompileWasm")}
                 </p>
               )}
               <button
@@ -133,7 +139,7 @@ function App() {
                 className="mt-2 text-sm text-yellow-800 hover:text-yellow-900 flex items-center space-x-1"
               >
                 <ArrowPathIcon className="h-4 w-4" />
-                <span>重试</span>
+                <span>{t("warning.retry")}</span>
               </button>
             </div>
           </div>
@@ -144,13 +150,13 @@ function App() {
           <div className="space-y-6">
             {/* 文件上传 */}
             <div className="bg-white rounded-lg shadow p-6 space-y-4">
-              <h2 className="text-lg font-medium text-gray-900">文件上传</h2>
+              <h2 className="text-lg font-medium text-gray-900">{t("fileUpload.title")}</h2>
               
               {/* 从链上获取交易 */}
               <TxFetcher
                 onMockTxReady={(file) => {
                   setMockTxFile(file);
-                  toast.addToast("success", "MockTx 已生成");
+                  toast.addToast("success", t("success.mockTxGenerated"));
                 }}
                 disabled={debugger_.isRunning}
               />
@@ -160,21 +166,21 @@ function App() {
                   <div className="w-full border-t border-gray-200" />
                 </div>
                 <div className="relative flex justify-center text-xs">
-                  <span className="bg-white px-2 text-gray-400">或手动上传文件</span>
+                  <span className="bg-white px-2 text-gray-400">{t("fileUpload.orManualUpload")}</span>
                 </div>
               </div>
               
               <FileUploader
-                label="Mock TX JSON"
+                label={t("fileUpload.mockTxJson")}
                 accept=".json"
-                helpText="上传 mock_tx.json 交易文件"
+                helpText={t("fileUpload.mockTxHelp")}
                 file={mockTxFile}
                 onFileChange={setMockTxFile}
                 disabled={debugger_.isRunning}
               />
               <FileUploader
-                label="二进制替换文件 (可选)"
-                helpText="用于替换脚本中引用的二进制文件"
+                label={t("fileUpload.binaryReplacement")}
+                helpText={t("fileUpload.binaryHelp")}
                 file={replacementFile}
                 onFileChange={setReplacementFile}
                 disabled={debugger_.isRunning}
@@ -183,7 +189,7 @@ function App() {
 
             {/* 参数配置 */}
             <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-lg font-medium text-gray-900 mb-4">参数配置</h2>
+              <h2 className="text-lg font-medium text-gray-900 mb-4">{t("params.title")}</h2>
               <MockTxParamsEditor
                 params={mockTxParams}
                 onChange={setMockTxParams}
@@ -209,12 +215,12 @@ function App() {
                 {debugger_.isRunning ? (
                   <>
                     <ArrowPathIcon className="h-5 w-5 animate-spin" />
-                    <span>运行中...</span>
+                    <span>{t("run.running")}</span>
                   </>
                 ) : (
                   <>
                     <PlayIcon className="h-5 w-5" />
-                    <span>运行单个脚本</span>
+                    <span>{t("run.single")}</span>
                   </>
                 )}
               </button>
@@ -235,12 +241,12 @@ function App() {
                 {debugger_.isRunning ? (
                   <>
                     <ArrowPathIcon className="h-5 w-5 animate-spin" />
-                    <span>运行中...</span>
+                    <span>{t("run.running")}</span>
                   </>
                 ) : (
                   <>
                     <PlayIcon className="h-5 w-5" />
-                    <span>一键执行全部</span>
+                    <span>{t("run.all")}</span>
                   </>
                 )}
               </button>

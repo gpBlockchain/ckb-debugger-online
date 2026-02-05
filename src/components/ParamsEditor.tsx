@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useI18n } from "../lib/i18n";
 
 export interface MockTxParams {
   cellIndex: number;
@@ -16,6 +17,7 @@ interface MockTxParamsEditorProps {
 export function MockTxParamsEditor({ params, onChange, disabled }: MockTxParamsEditorProps) {
   const [localMaxCycles, setLocalMaxCycles] = useState(String(params.maxCycles));
   const [localCellIndex, setLocalCellIndex] = useState(String(params.cellIndex));
+  const { t } = useI18n();
 
   useEffect(() => {
     setLocalMaxCycles(String(params.maxCycles));
@@ -47,7 +49,7 @@ export function MockTxParamsEditor({ params, onChange, disabled }: MockTxParamsE
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Cell Index
+            {t("params.cellIndex")}
           </label>
           <input
             type="number"
@@ -63,7 +65,7 @@ export function MockTxParamsEditor({ params, onChange, disabled }: MockTxParamsE
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Cell Type
+            {t("params.cellType")}
           </label>
           <select
             value={params.cellType}
@@ -81,7 +83,7 @@ export function MockTxParamsEditor({ params, onChange, disabled }: MockTxParamsE
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Script Group Type
+            {t("params.scriptGroupType")}
           </label>
           <select
             value={params.scriptGroupType}
@@ -97,7 +99,7 @@ export function MockTxParamsEditor({ params, onChange, disabled }: MockTxParamsE
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            最大 Cycles
+            {t("params.maxCycles")}
           </label>
           <input
             type="text"
@@ -113,7 +115,7 @@ export function MockTxParamsEditor({ params, onChange, disabled }: MockTxParamsE
 
       <div className="p-3 bg-blue-50 rounded-lg">
         <p className="text-sm text-blue-700">
-          <strong>等效命令：</strong>
+          <strong>{t("params.equivalentCommand")}</strong>
         </p>
         <code className="text-xs text-blue-600 block mt-1 break-all">
           ckb-debugger --tx-file mock_tx.json --cell-index {params.cellIndex} --cell-type {params.cellType} --script-group-type {params.scriptGroupType}

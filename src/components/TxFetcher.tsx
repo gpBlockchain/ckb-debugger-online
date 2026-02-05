@@ -13,7 +13,6 @@ import type { UploadedFile } from "./FileUploader";
 import {
   type NetworkType,
   type ConversionProgress,
-  NETWORK_CONFIGS,
   createClient,
   fetchTransaction,
   convertToMockTx,
@@ -21,6 +20,7 @@ import {
   parseTransactionView,
   mockTxToBytes,
 } from "../lib/txConverter";
+import { useI18n } from "../lib/i18n";
 
 interface TxFetcherProps {
   /** 获取成功后的回调 */
@@ -31,7 +31,15 @@ interface TxFetcherProps {
 
 type InputMode = "hash" | "json" | "molecule";
 
+// Network RPC endpoints
+const NETWORK_RPC = {
+  mainnet: "https://mainnet.ckbapp.dev/rpc",
+  testnet: "https://testnet.ckbapp.dev/rpc",
+} as const;
+
 export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
+  const { t } = useI18n();
+  
   // 网络配置
   const [network, setNetwork] = useState<NetworkType>("testnet");
   const [customRpc, setCustomRpc] = useState("");
@@ -58,7 +66,7 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
     if (network === "custom") {
       return customRpc;
     }
-    return NETWORK_CONFIGS[network].rpc;
+    return NETWORK_RPC[network];
   }, [network, customRpc]);
 
   // 验证交易哈希格式
@@ -69,24 +77,24 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
   // 从链上获取交易并转换
   const handleFetchByHash = useCallback(async () => {
     if (!txHash.trim()) {
-      setError("请输入交易哈希");
+      setError(t("error.enterTxHash"));
       return;
     }
 
     if (!isValidTxHash(txHash)) {
-      setError("交易哈希格式不正确，应为 0x 开头的 64 位十六进制字符串");
+      setError(t("error.invalidTxHash"));
       return;
     }
 
     if (network === "custom" && !customRpc.trim()) {
-      setError("请输入自定义 RPC 地址");
+      setError(t("error.enterCustomRpc"));
       return;
     }
 
     setIsLoading(true);
     setError(null);
     setSuccess(false);
-    setProgress({ stage: "fetching_tx", current: 0, total: 1, message: "正在获取交易..." });
+    setProgress({ stage: "fetching_tx", current: 0, total: 1, message: t("progress.fetchingTx") });
 
     try {
       const client = createClient(network, customRpc);
@@ -109,24 +117,24 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [txHash, network, customRpc, isValidTxHash, onMockTxReady]);
+  }, [txHash, network, customRpc, isValidTxHash, onMockTxReady, t]);
 
   // 从 JSON 转换
   const handleConvertFromJson = useCallback(async () => {
     if (!rawTxJson.trim()) {
-      setError("请输入交易 JSON");
+      setError(t("error.enterTxJson"));
       return;
     }
 
     if (network === "custom" && !customRpc.trim()) {
-      setError("请输入自定义 RPC 地址");
+      setError(t("error.enterCustomRpc"));
       return;
     }
 
     setIsLoading(true);
     setError(null);
     setSuccess(false);
-    setProgress({ stage: "fetching_tx", current: 0, total: 1, message: "正在解析交易..." });
+    setProgress({ stage: "fetching_tx", current: 0, total: 1, message: t("progress.parsingTx") });
 
     try {
       const tx = parseRawTxJson(rawTxJson);
@@ -149,24 +157,24 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [rawTxJson, network, customRpc, onMockTxReady]);
+  }, [rawTxJson, network, customRpc, onMockTxReady, t]);
 
   // 从 TransactionView (molecule hex) 转换
   const handleConvertFromMolecule = useCallback(async () => {
     if (!moleculeHex.trim()) {
-      setError("请输入 TransactionView 数据");
+      setError(t("error.enterTransactionView"));
       return;
     }
 
     if (network === "custom" && !customRpc.trim()) {
-      setError("请输入自定义 RPC 地址");
+      setError(t("error.enterCustomRpc"));
       return;
     }
 
     setIsLoading(true);
     setError(null);
     setSuccess(false);
-    setProgress({ stage: "fetching_tx", current: 0, total: 1, message: "正在解析 TransactionView..." });
+    setProgress({ stage: "fetching_tx", current: 0, total: 1, message: t("progress.parsingTransactionView") });
 
     try {
       const tx = parseTransactionView(moleculeHex);
@@ -189,7 +197,7 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [moleculeHex, network, customRpc, onMockTxReady]);
+  }, [moleculeHex, network, customRpc, onMockTxReady, t]);
 
   // 进度条组件
   const ProgressBar = () => {
@@ -224,7 +232,7 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
       >
         <div className="flex items-center space-x-2">
           <ArrowDownTrayIcon className="h-5 w-5 text-blue-500" />
-          <span className="text-sm font-medium text-gray-700">从链上获取交易</span>
+          <span className="text-sm font-medium text-gray-700">{t("txFetcher.title")}</span>
         </div>
         {isExpanded ? (
           <ChevronUpIcon className="h-4 w-4 text-gray-400" />
@@ -238,22 +246,22 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
           {/* 网络选择 */}
           <div className="flex items-center space-x-4">
             <div className="flex-1">
-              <label className="block text-xs text-gray-500 mb-1">网络</label>
+              <label className="block text-xs text-gray-500 mb-1">{t("txFetcher.network")}</label>
               <select
                 value={network}
                 onChange={(e) => setNetwork(e.target.value as NetworkType)}
                 disabled={disabled || isLoading}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
               >
-                <option value="mainnet">{NETWORK_CONFIGS.mainnet.name}</option>
-                <option value="testnet">{NETWORK_CONFIGS.testnet.name}</option>
-                <option value="custom">自定义 RPC</option>
+                <option value="mainnet">{t("txFetcher.mainnet")}</option>
+                <option value="testnet">{t("txFetcher.testnet")}</option>
+                <option value="custom">{t("txFetcher.customRpc")}</option>
               </select>
             </div>
             
             {network === "custom" ? (
               <div className="flex-[2]">
-                <label className="block text-xs text-gray-500 mb-1">RPC 地址</label>
+                <label className="block text-xs text-gray-500 mb-1">{t("txFetcher.rpcAddress")}</label>
                 <input
                   type="text"
                   value={customRpc}
@@ -265,7 +273,7 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
               </div>
             ) : (
               <div className="flex-[2]">
-                <label className="block text-xs text-gray-500 mb-1">RPC 地址</label>
+                <label className="block text-xs text-gray-500 mb-1">{t("txFetcher.rpcAddress")}</label>
                 <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600">
                   {getCurrentRpc()}
                 </div>
@@ -286,7 +294,7 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
               } disabled:opacity-50`}
             >
               <MagnifyingGlassIcon className="h-4 w-4" />
-              <span>交易哈希</span>
+              <span>{t("txFetcher.txHash")}</span>
             </button>
             <button
               type="button"
@@ -299,7 +307,7 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
               } disabled:opacity-50`}
             >
               <DocumentTextIcon className="h-4 w-4" />
-              <span>Raw TX JSON</span>
+              <span>{t("txFetcher.rawTxJson")}</span>
             </button>
             <button
               type="button"
@@ -312,14 +320,14 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
               } disabled:opacity-50`}
             >
               <DocumentTextIcon className="h-4 w-4" />
-              <span>TransactionView</span>
+              <span>{t("txFetcher.transactionView")}</span>
             </button>
           </div>
 
           {/* 输入区域 */}
           {inputMode === "hash" && (
             <div>
-              <label className="block text-xs text-gray-500 mb-1">交易哈希</label>
+              <label className="block text-xs text-gray-500 mb-1">{t("txFetcher.txHash")}</label>
               <div className="flex space-x-2">
                 <input
                   type="text"
@@ -342,12 +350,12 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
                   {isLoading ? (
                     <>
                       <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                      <span>获取中</span>
+                      <span>{t("txFetcher.fetching")}</span>
                     </>
                   ) : (
                     <>
                       <ArrowDownTrayIcon className="h-4 w-4" />
-                      <span>获取</span>
+                      <span>{t("txFetcher.fetch")}</span>
                     </>
                   )}
                 </button>
@@ -356,7 +364,7 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
           )}
           {inputMode === "json" && (
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Raw Transaction JSON</label>
+              <label className="block text-xs text-gray-500 mb-1">{t("txFetcher.rawTxJson")}</label>
               <textarea
                 value={rawTxJson}
                 onChange={(e) => {
@@ -378,12 +386,12 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
                 {isLoading ? (
                   <>
                     <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                    <span>转换中</span>
+                    <span>{t("txFetcher.converting")}</span>
                   </>
                 ) : (
                   <>
                     <ArrowDownTrayIcon className="h-4 w-4" />
-                    <span>转换为 MockTx</span>
+                    <span>{t("txFetcher.convert")}</span>
                   </>
                 )}
               </button>
@@ -391,7 +399,7 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
           )}
           {inputMode === "molecule" && (
             <div>
-              <label className="block text-xs text-gray-500 mb-1">TransactionView (Molecule Hex)</label>
+              <label className="block text-xs text-gray-500 mb-1">{t("txFetcher.transactionView")} (Molecule Hex)</label>
               <textarea
                 value={moleculeHex}
                 onChange={(e) => {
@@ -399,7 +407,7 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
                   setError(null);
                   setSuccess(false);
                 }}
-                placeholder="TransactionView { data: Transaction(0x...) } 或直接输入 0x..."
+                placeholder="TransactionView { data: Transaction(0x...) } or 0x..."
                 disabled={disabled || isLoading}
                 rows={6}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 resize-y"
@@ -413,12 +421,12 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
                 {isLoading ? (
                   <>
                     <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                    <span>转换中</span>
+                    <span>{t("txFetcher.converting")}</span>
                   </>
                 ) : (
                   <>
                     <ArrowDownTrayIcon className="h-4 w-4" />
-                    <span>转换为 MockTx</span>
+                    <span>{t("txFetcher.convert")}</span>
                   </>
                 )}
               </button>
@@ -440,7 +448,7 @@ export function TxFetcher({ onMockTxReady, disabled = false }: TxFetcherProps) {
           {success && (
             <div className="flex items-start space-x-2 p-3 bg-green-50 border border-green-200 rounded-lg">
               <CheckCircleIcon className="h-5 w-5 text-green-500 flex-shrink-0" />
-              <p className="text-sm text-green-700">MockTx 已生成，可以开始调试</p>
+              <p className="text-sm text-green-700">{t("txFetcher.success")}</p>
             </div>
           )}
         </div>
