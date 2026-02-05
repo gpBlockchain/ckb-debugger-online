@@ -7,6 +7,7 @@ import {
   ClipboardDocumentCheckIcon,
 } from "@heroicons/react/24/outline";
 import type { DebuggerResult } from "../lib/wasmer";
+import { useI18n } from "../lib/i18n";
 
 interface OutputConsoleProps {
   result: DebuggerResult | null;
@@ -18,6 +19,7 @@ type OutputTab = "stdout" | "stderr" | "all";
 export function OutputConsole({ result, isRunning }: OutputConsoleProps) {
   const [activeTab, setActiveTab] = useState<OutputTab>("all");
   const [copied, setCopied] = useState(false);
+  const { t } = useI18n();
 
   const handleCopy = async () => {
     if (!result) return;
@@ -46,16 +48,16 @@ export function OutputConsole({ result, isRunning }: OutputConsoleProps) {
     
     switch (activeTab) {
       case "stdout":
-        return result.stdout || "(无输出)";
+        return result.stdout || t("output.noOutput");
       case "stderr":
-        return result.stderr || "(无输出)";
+        return result.stderr || t("output.noOutput");
       case "all":
         return [
           result.stdout && `[STDOUT]\n${result.stdout}`,
           result.stderr && `[STDERR]\n${result.stderr}`,
         ]
           .filter(Boolean)
-          .join("\n\n") || "(无输出)";
+          .join("\n\n") || t("output.noOutput");
     }
   };
 
@@ -64,13 +66,13 @@ export function OutputConsole({ result, isRunning }: OutputConsoleProps) {
       {/* 头部 */}
       <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700">
         <div className="flex items-center space-x-4">
-          <h3 className="text-sm font-medium text-gray-200">输出</h3>
+          <h3 className="text-sm font-medium text-gray-200">{t("output.title")}</h3>
           
           {/* 状态指示 */}
           {isRunning && (
             <div className="flex items-center space-x-1 text-yellow-400">
               <ClockIcon className="h-4 w-4 animate-spin" />
-              <span className="text-xs">运行中...</span>
+              <span className="text-xs">{t("output.running")}</span>
             </div>
           )}
           
@@ -110,7 +112,7 @@ export function OutputConsole({ result, isRunning }: OutputConsoleProps) {
             onClick={handleCopy}
             disabled={!result}
             className="p-1.5 text-gray-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            title="复制输出"
+            title={t("output.copyTitle")}
           >
             {copied ? (
               <ClipboardDocumentCheckIcon className="h-4 w-4 text-green-400" />
@@ -129,7 +131,7 @@ export function OutputConsole({ result, isRunning }: OutputConsoleProps) {
               <div className="animate-pulse mb-2">
                 <div className="w-8 h-8 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin mx-auto"></div>
               </div>
-              <p className="text-sm">正在执行合约...</p>
+              <p className="text-sm">{t("output.executing")}</p>
             </div>
           </div>
         ) : result ? (
@@ -138,7 +140,7 @@ export function OutputConsole({ result, isRunning }: OutputConsoleProps) {
           </pre>
         ) : (
           <div className="flex items-center justify-center h-full text-gray-500">
-            <p className="text-sm">运行调试器后输出将显示在这里</p>
+            <p className="text-sm">{t("output.placeholder")}</p>
           </div>
         )}
       </div>

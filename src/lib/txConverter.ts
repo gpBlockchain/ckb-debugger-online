@@ -24,18 +24,6 @@ function daoToHex(dao: { c: bigint; ar: bigint; s: bigint; u: bigint }): string 
 // 网络类型
 export type NetworkType = "mainnet" | "testnet" | "custom";
 
-// 网络配置
-export const NETWORK_CONFIGS = {
-  mainnet: {
-    name: "主网",
-    rpc: "https://mainnet.ckbapp.dev/rpc",
-  },
-  testnet: {
-    name: "测试网",
-    rpc: "https://testnet.ckbapp.dev/rpc",
-  },
-} as const;
-
 // MockTx 格式类型定义
 export interface MockInput {
   input: {

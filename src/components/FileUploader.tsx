@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { ArrowUpTrayIcon, DocumentIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import { useI18n } from "../lib/i18n";
 
 export interface UploadedFile {
   name: string;
@@ -31,6 +32,7 @@ export function FileUploader({
   disabled = false,
 }: FileUploaderProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const { t } = useI18n();
 
   const handleFile = useCallback(
     async (inputFile: File) => {
@@ -144,7 +146,7 @@ export function FileUploader({
           >
             <ArrowUpTrayIcon className="h-10 w-10 text-gray-400 mb-2" />
             <span className="text-sm text-gray-600">
-              拖放文件到这里，或 <span className="text-blue-500 hover:underline">点击选择</span>
+              {t("fileUpload.dropzone")} <span className="text-blue-500 hover:underline">{t("fileUpload.clickToSelect")}</span>
             </span>
             {helpText && (
               <span className="text-xs text-gray-400 mt-1">{helpText}</span>
