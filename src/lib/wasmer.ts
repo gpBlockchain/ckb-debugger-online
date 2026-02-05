@@ -242,6 +242,99 @@ export async function runBinaryMode(_params: BinaryModeParams): Promise<Debugger
 }
 
 /**
+ * 将 Uint8Array 转换为 hex 字符串
+ */
+function uint8ArrayToHex(bytes: Uint8Array): string {
+  return '0x' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * 在 mock_tx 中查找并替换与 code_hash 匹配的 cell_dep 的 data
+ */
+function replaceBinaryInMockTx(
+  mockTxObj: Record<string, unknown>,
+  codeHash: string,
+  hashType: string,
+  binaryContent: Uint8Array
+): boolean {
+  const mockInfo = mockTxObj.mock_info as Record<string, unknown>;
+  if (!mockInfo) return false;
+  
+  const cellDeps = mockInfo.cell_deps as Array<Record<string, unknown>>;
+  if (!cellDeps) return false;
+  
+  // 将二进制转为 hex
+  const binaryHex = uint8ArrayToHex(binaryContent);
+  
+  // 查找匹配 code_hash 的 cell_dep
+  // 对于 hash_type=type，需要找 type script 匹配的 cell
+  // 对于 hash_type=data/data1/data2，需要找 data hash 匹配的 cell（即 code cell）
+  let replaced = false;
+  
+  for (const cellDep of cellDeps) {
+    const output = cellDep.output as Record<string, unknown>;
+    if (!output) continue;
+    
+    if (hashType === 'type') {
+      // type 类型：匹配 cell 的 type script hash
+      const typeScript = output.type as Record<string, unknown>;
+      if (typeScript) {
+        const typeScriptHash = computeScriptHash({
+          code_hash: typeScript.code_hash as string,
+          hash_type: typeScript.hash_type as string,
+          args: typeScript.args as string,
+        });
+        if (typeScriptHash.toLowerCase() === codeHash.toLowerCase()) {
+          cellDep.data = binaryHex;
+          replaced = true;
+          console.log('已替换 type script 匹配的 cell data');
+        }
+      }
+    } else {
+      // data/data1/data2 类型：匹配 cell data 的 hash
+      // 由于我们要替换的就是 data，需要通过其他方式识别
+      // 通常是通过 cell 的 type script 或直接通过 code_hash 在 cell_deps 中查找
+      // 这里简化处理：查找 lock script 的 code_hash 与目标匹配的 cell
+      const lockScript = output.lock as Record<string, unknown>;
+      if (lockScript && (lockScript.code_hash as string)?.toLowerCase() === codeHash.toLowerCase()) {
+        cellDep.data = binaryHex;
+        replaced = true;
+        console.log('已替换 code_hash 匹配的 cell data');
+      }
+      
+      // 也检查 data hash 是否匹配（通过计算当前 data 的 hash）
+      const currentData = cellDep.data as string;
+      if (currentData && !replaced) {
+        const currentDataHash = computeDataHash(currentData);
+        if (currentDataHash.toLowerCase() === codeHash.toLowerCase()) {
+          cellDep.data = binaryHex;
+          replaced = true;
+          console.log('已替换 data hash 匹配的 cell data');
+        }
+      }
+    }
+  }
+  
+  return replaced;
+}
+
+/**
+ * 计算 data 的 blake2b-256 hash
+ */
+function computeDataHash(dataHex: string): string {
+  const cleanHex = dataHex.startsWith('0x') ? dataHex.slice(2) : dataHex;
+  if (cleanHex.length === 0) return '0x' + '0'.repeat(64);
+  
+  const bytes = new Uint8Array(cleanHex.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(cleanHex.substr(i * 2, 2), 16);
+  }
+  
+  const hash = blake2b256(bytes);
+  return '0x' + bytesToHex(hash);
+}
+
+/**
  * 使用 Mock TX 模式运行调试器
  */
 export async function runMockTxMode(params: MockTxModeParams): Promise<DebuggerResult> {
@@ -251,6 +344,7 @@ export async function runMockTxMode(params: MockTxModeParams): Promise<DebuggerR
     cellType,
     scriptGroupType,
     maxCycles = 3500000000,
+    binaryReplacement,
   } = params;
   
   const startTime = performance.now();
@@ -277,6 +371,23 @@ export async function runMockTxMode(params: MockTxModeParams): Promise<DebuggerR
       };
     }
     
+    // 如果有二进制替换文件，替换 mock_tx 中对应的 cell data
+    let replacementInfo = '';
+    if (binaryReplacement) {
+      const replaced = replaceBinaryInMockTx(
+        mockTxObj,
+        script.code_hash,
+        script.hash_type,
+        binaryReplacement.content
+      );
+      if (replaced) {
+        replacementInfo = `\n[已替换二进制: ${binaryReplacement.name}]\n`;
+      } else {
+        console.warn('未找到匹配的 cell_dep 进行替换');
+        replacementInfo = `\n[警告: 未找到匹配的 cell_dep，二进制未替换]\n`;
+      }
+    }
+    
     // 计算脚本哈希
     const scriptHash = computeScriptHash(script);
     
@@ -287,9 +398,12 @@ export async function runMockTxMode(params: MockTxModeParams): Promise<DebuggerR
     console.log('计算的脚本哈希:', scriptHash);
     console.log('脚本详情:', script);
     
+    // 将可能修改过的 mockTxObj 转回字符串
+    const finalMockTxStr = JSON.stringify(mockTxObj);
+    
     // 调用 run_json 函数
     const result = run_json(
-      mockTxStr,
+      finalMockTxStr,
       scriptGroupType,
       scriptHash,
       String(maxCycles)
@@ -316,7 +430,9 @@ export async function runMockTxMode(params: MockTxModeParams): Promise<DebuggerR
     
     // 格式化输出
     let formattedOutput = '';
-    formattedOutput += `$ ${cmdEquivalent}\n\n`;
+    formattedOutput += `$ ${cmdEquivalent}\n`;
+    formattedOutput += replacementInfo;
+    formattedOutput += '\n';
     
     if (isSuccess) {
       formattedOutput += `✓ 执行成功\n\n`;
