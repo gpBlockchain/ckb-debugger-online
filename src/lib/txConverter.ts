@@ -418,10 +418,22 @@ export async function convertToMockTx(
       const header = await client.getHeaderByHash(headerHash);
       
       if (header) {
+        // Convert DAO object to 32-byte hex string (4 x u64 little-endian)
+        const daoBytes = new Uint8Array(32);
+        const cBytes = ccc.numLeToBytes(header.dao.c, 8);
+        const arBytes = ccc.numLeToBytes(header.dao.ar, 8);
+        const sBytes = ccc.numLeToBytes(header.dao.s, 8);
+        const uBytes = ccc.numLeToBytes(header.dao.u, 8);
+        daoBytes.set(cBytes, 0);
+        daoBytes.set(arBytes, 8);
+        daoBytes.set(sBytes, 16);
+        daoBytes.set(uBytes, 24);
+        const daoHex = `0x${Array.from(daoBytes).map(b => b.toString(16).padStart(2, '0')).join('')}`;
+        
         mockHeaderDeps.push({
           compact_target: `0x${header.compactTarget.toString(16)}`,
-          dao: header.dao,
-          epoch: `0x${header.epoch.toString(16)}`,
+          dao: daoHex,
+          epoch: ccc.epochToHex(header.epoch),
           extra_hash: header.extraHash,
           hash: header.hash,
           nonce: `0x${header.nonce.toString(16)}`,
