@@ -1,0 +1,20 @@
+{
+  "name": "ckb-debugger",
+  "type": "module",
+  "collaborators": [
+    "Nervos Core Dev <dev@nervos.org>"
+  ],
+  "description": "Standalone debugger for Nervos CKB",
+  "version": "1.0.0",
+  "license": "MIT",
+  "files": [
+    "ckb_debugger_bg.wasm",
+    "ckb_debugger.js",
+    "ckb_debugger.d.ts"
+  ],
+  "main": "ckb_debugger.js",
+  "types": "ckb_debugger.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
