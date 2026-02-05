@@ -35,16 +35,6 @@ export interface DebuggerResult {
 }
 
 /**
- * Binary 模式参数 (wasm-pack 版本不支持，保留接口兼容性)
- */
-export interface BinaryModeParams {
-  binary: Uint8Array;
-  binaryName: string;
-  maxCycles?: number;
-  programArgs?: string[];
-}
-
-/**
  * Mock TX 模式参数
  */
 export interface MockTxModeParams {
@@ -225,20 +215,6 @@ function extractScript(
     console.error('提取脚本失败:', e);
     return null;
   }
-}
-
-/**
- * 使用 Binary 模式运行调试器
- * 注意：wasm-pack 版本不支持直接运行二进制文件
- */
-export async function runBinaryMode(_params: BinaryModeParams): Promise<DebuggerResult> {
-  return {
-    stdout: '',
-    stderr: '错误：浏览器 WASM 版本不支持直接运行二进制文件。\n\n请使用 Mock TX 模式，或使用命令行版本的 ckb-debugger。\n\n安装命令行版本：\ncargo install --git https://github.com/nervosnetwork/ckb-standalone-debugger ckb-debugger',
-    exitCode: -1,
-    success: false,
-    duration: 0,
-  };
 }
 
 /**

@@ -1,10 +1,5 @@
 import { useState, useEffect } from "react";
 
-export interface BinaryParams {
-  maxCycles: number;
-  programArgs: string;
-}
-
 export interface MockTxParams {
   cellIndex: number;
   cellType: "input" | "output";
@@ -12,66 +7,10 @@ export interface MockTxParams {
   maxCycles: number;
 }
 
-interface BinaryParamsEditorProps {
-  params: BinaryParams;
-  onChange: (params: BinaryParams) => void;
-  disabled?: boolean;
-}
-
 interface MockTxParamsEditorProps {
   params: MockTxParams;
   onChange: (params: MockTxParams) => void;
   disabled?: boolean;
-}
-
-export function BinaryParamsEditor({ params, onChange, disabled }: BinaryParamsEditorProps) {
-  const [localMaxCycles, setLocalMaxCycles] = useState(String(params.maxCycles));
-
-  useEffect(() => {
-    setLocalMaxCycles(String(params.maxCycles));
-  }, [params.maxCycles]);
-
-  const handleMaxCyclesChange = (value: string) => {
-    setLocalMaxCycles(value);
-    const num = parseInt(value, 10);
-    if (!isNaN(num) && num > 0) {
-      onChange({ ...params, maxCycles: num });
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          最大 Cycles
-        </label>
-        <input
-          type="text"
-          value={localMaxCycles}
-          onChange={(e) => handleMaxCyclesChange(e.target.value)}
-          disabled={disabled}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-          placeholder="3500000000"
-        />
-        <p className="text-xs text-gray-400 mt-1">默认: 3,500,000,000</p>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          程序参数 (可选)
-        </label>
-        <input
-          type="text"
-          value={params.programArgs}
-          onChange={(e) => onChange({ ...params, programArgs: e.target.value })}
-          disabled={disabled}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-          placeholder="arg1 arg2 arg3"
-        />
-        <p className="text-xs text-gray-400 mt-1">空格分隔的参数列表</p>
-      </div>
-    </div>
-  );
 }
 
 export function MockTxParamsEditor({ params, onChange, disabled }: MockTxParamsEditorProps) {
