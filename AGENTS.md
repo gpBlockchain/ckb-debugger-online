@@ -214,6 +214,23 @@ wasm-opt = false
 1. 仓库 Settings > Pages > Source 设置为 "GitHub Actions"
 2. vite.config.ts 中 base 路径正确
 
+### Q: 在线获取交易失败？
+
+可能的原因：
+1. **CORS 限制**: 自定义 RPC 节点需要配置 CORS，使用 ckbapp.dev 公共节点无此问题
+2. **交易不存在**: 检查交易哈希是否正确
+3. **Cell 已被消费**: 转换逻辑会通过获取创建 Cell 的交易来获取数据，不依赖 live cell
+
+### Q: 二进制替换没效果？
+
+替换逻辑匹配规则：
+- `hash_type=type`: 匹配 cell 的 type script hash
+- `hash_type=data/data1/data2`: 匹配 cell data 的 blake2b hash
+
+### Q: dep_group 展开失败？
+
+dep_group 的 data 字段是 OutPointVec (molecule 格式)，解析逻辑在 `parseDepGroupData()` 函数中。
+
 ## 部署
 
 项目使用 GitHub Actions 自动部署到 GitHub Pages：
@@ -229,6 +246,7 @@ wasm-opt = false
 - [ckb-standalone-debugger](https://github.com/nervosnetwork/ckb-standalone-debugger)
 - [CKB Documentation](https://docs.nervos.org/)
 - [Molecule Encoding](https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0008-serialization/0008-serialization.md)
+- [CCC SDK](https://github.com/ckb-devrel/ccc) - CKB JS/TS SDK
 
 ## 维护者注意事项
 
@@ -236,3 +254,6 @@ wasm-opt = false
 2. **blake2b 库**: 使用 blakejs，不要替换为其他库
 3. **Cross-Origin 头**: GitHub Pages 不支持自定义 headers，SharedArrayBuffer 可能受限
 4. **保持兼容**: mock_tx.json 格式需要与 ckb-debugger CLI 保持一致
+5. **CCC SDK**: 用于 RPC 交互，公共节点使用 `ClientPublicMainnet` / `ClientPublicTestnet`
+6. **数字格式**: CKB RPC 使用 `0x` 前缀的十六进制，`txConverter.ts` 中的 `toHexString()` 函数处理格式转换
+7. **dep_type 格式**: CCC SDK 返回 `depGroup`，ckb-debugger 需要 `dep_group`，由 `normalizeDepType()` 处理
