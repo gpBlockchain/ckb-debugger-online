@@ -1,3 +1,5 @@
+// Disable react-refresh warning because ErrorFallback is a private helper component
+// that's only used within the ErrorBoundary and doesn't need to be in a separate file
 /* eslint-disable react-refresh/only-export-components */
 import { Component, type ReactNode } from "react";
 import { ExclamationTriangleIcon, ArrowPathIcon } from "@heroicons/react/24/outline";
