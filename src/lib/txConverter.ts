@@ -5,6 +5,22 @@
 
 import { ccc } from "@ckb-ccc/ccc";
 
+/**
+ * Convert dao object to hex string
+ * DAO format: 32 bytes, 4 fields (c, ar, s, u) each 8 bytes little-endian
+ * @param dao - DAO fields from CKB block header
+ * @returns Hex string representation of the DAO
+ */
+function daoToHex(dao: { c: bigint; ar: bigint; s: bigint; u: bigint }): string {
+  const bytes = new Uint8Array(32);
+  const view = new DataView(bytes.buffer);
+  view.setBigUint64(0, dao.c, true);  // little-endian
+  view.setBigUint64(8, dao.ar, true);
+  view.setBigUint64(16, dao.s, true);
+  view.setBigUint64(24, dao.u, true);
+  return "0x" + Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
 // 网络类型
 export type NetworkType = "mainnet" | "testnet" | "custom";
 
@@ -420,8 +436,8 @@ export async function convertToMockTx(
       if (header) {
         mockHeaderDeps.push({
           compact_target: `0x${header.compactTarget.toString(16)}`,
-          dao: header.dao,
-          epoch: `0x${header.epoch.toString(16)}`,
+          dao: daoToHex(header.dao),
+          epoch: ccc.epochToHex(header.epoch),
           extra_hash: header.extraHash,
           hash: header.hash,
           nonce: `0x${header.nonce.toString(16)}`,
