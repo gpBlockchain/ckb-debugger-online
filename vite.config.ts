@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  base: '/ckb-debugger-online/',
   server: {
     headers: {
       // 必须配置这些 headers 以支持 SharedArrayBuffer (Wasmer SDK 需要)
