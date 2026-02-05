@@ -13,6 +13,7 @@ CKB Debugger Online 是一个基于浏览器的 CKB 合约调试器，使用 Web
 - **样式**: Tailwind CSS
 - **WASM**: ckb-debugger 编译为 WebAssembly (via wasm-pack)
 - **哈希算法**: blakejs (blake2b-256)
+- **CKB SDK**: @ckb-ccc/ccc (用于 RPC 交互和交易解析)
 
 ## 项目结构
 
@@ -29,13 +30,15 @@ ckb-debugger-online/
 │   │   ├── ModeSelector.tsx
 │   │   ├── OutputConsole.tsx
 │   │   ├── ParamsEditor.tsx
-│   │   └── Toast.tsx
+│   │   ├── Toast.tsx
+│   │   └── TxFetcher.tsx      # 在线获取交易组件
 │   ├── hooks/
-│   │   └── useDebugger.ts # 调试器状态管理
+│   │   └── useDebugger.ts     # 调试器状态管理
 │   ├── lib/
-│   │   ├── ckb-debugger-wasm/  # WASM 模块 (预编译)
-│   │   ├── examples.ts         # 示例配置
-│   │   └── wasmer.ts           # WASM 封装层 (核心)
+│   │   ├── ckb-debugger-wasm/ # WASM 模块 (预编译)
+│   │   ├── examples.ts        # 示例配置
+│   │   ├── txConverter.ts     # 交易转换逻辑 (CCC SDK)
+│   │   └── wasmer.ts          # WASM 封装层 (核心)
 │   ├── App.tsx            # 主应用组件
 │   ├── main.tsx           # 入口文件
 │   └── index.css          # 全局样式
@@ -45,22 +48,75 @@ ckb-debugger-online/
     └── build-wasm.sh      # WASM 编译脚本
 ```
 
+## 主要功能
+
+### 1. Mock TX 调试
+上传或生成 mock_tx.json 文件，选择要调试的脚本组执行。
+
+### 2. 在线获取交易
+从 CKB 主网/测试网获取真实交易并自动转换为 MockTx 格式：
+- **交易哈希**: 输入 tx hash，从链上获取交易
+- **Raw TX JSON**: 粘贴 RPC 返回的交易 JSON
+- **TransactionView**: 粘贴 molecule 序列化的十六进制数据
+
+### 3. 一键执行全部脚本
+自动识别并执行交易中的所有脚本组（Lock 和 Type），输出格式：
+```
+Total cycles: 1,703,041
+Lock with inputs: [0], outputs: []
+  Script hash: ea3c3c2c5dadcc00c96e9791eb077fca89885acab957946d05984a079191e970
+  Cycles: 1,693,105
+Type with inputs: [], outputs: [0]
+  Script hash: cc77c4deac05d68ab5b26828f0bf4565a8d73113d7bb7e92b8362b8a74e58e58
+  Cycles: 9,936
+```
+
+### 4. 二进制替换
+上传新的合约二进制文件，替换 MockTx 中对应脚本的代码进行调试。
+
 ## 核心文件说明
 
 ### `src/lib/wasmer.ts`
 
-这是最重要的文件，封装了与 WASM 模块的交互：
+WASM 模块封装层，主要函数：
 
 - `initializeWasmer()`: 初始化 WASM 模块
-- `runMockTxMode()`: 执行 Mock TX 调试
+- `runMockTxMode()`: 执行单个脚本组调试
+- `runAllScriptGroups()`: 一键执行所有脚本组
 - `computeScriptHash()`: 计算脚本的 blake2b-256 哈希
 - `serializeScript()`: Molecule 格式序列化脚本
 - `extractScript()`: 从 mock_tx.json 提取脚本
+- `extractAllScriptGroups()`: 提取所有脚本组
+- `replaceBinaryInMockTx()`: 二进制替换逻辑
 
 **Script Hash 计算流程**:
 1. 从 mock_tx.json 根据 cell-index, cell-type, script-group-type 提取脚本
 2. 将脚本序列化为 Molecule 格式
 3. 使用 blake2b-256 (personalization: "ckb-default-hash") 计算哈希
+
+### `src/lib/txConverter.ts`
+
+交易转换模块，使用 CCC SDK：
+
+- `createClient()`: 创建 CKB RPC 客户端
+- `fetchTransaction()`: 从链上获取交易
+- `convertToMockTx()`: 将交易转换为 MockTx 格式
+- `parseRawTxJson()`: 解析 Raw TX JSON
+- `parseTransactionView()`: 解析 TransactionView (molecule hex)
+- `parseDepGroupData()`: 解析 dep_group 类型的 cell data
+
+**MockTx 转换流程**:
+1. 获取交易的所有 input cells 详情
+2. 获取所有 cell_deps 详情（包括展开 dep_group）
+3. 获取 header_deps（如果有）
+4. 组装为 MockTx 格式
+
+### `src/components/TxFetcher.tsx`
+
+在线获取交易的 UI 组件：
+- 网络选择（主网/测试网/自定义 RPC）
+- 三种输入模式：交易哈希、Raw TX JSON、TransactionView
+- 转换进度显示
 
 ### `src/lib/ckb-debugger-wasm/`
 
