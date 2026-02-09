@@ -3,6 +3,7 @@ import {
   PlayIcon,
   ArrowPathIcon,
   ExclamationTriangleIcon,
+  BeakerIcon,
 } from "@heroicons/react/24/solid";
 import { BinaryLoader, type LoadedBinary } from "./BinaryLoader";
 import { OutputConsole } from "./OutputConsole";
@@ -11,9 +12,19 @@ import {
   executeScript,
   type IpcExecuteResult,
 } from "../lib/ipcRunner";
+import type { NetworkType } from "../lib/txConverter";
 import type { DebuggerResult } from "../lib/wasmer";
 import { useToast } from "./Toast";
 import { useI18n } from "../lib/i18n";
+
+// Demo example configuration
+const DEMO_CONFIG = {
+  network: "testnet" as NetworkType,
+  txHash: "0xd9f0427fd961edfab00d1e37cec34ec301eed54e7099628c7b59bff003a8956a",
+  outputIndex: "0",
+  args: "server_entry",
+  jsonRequest: '{"TestPrimitiveTypes":{"arg1":1,"arg2":2,"arg3":3,"arg4":4,"arg5":5,"arg6":6,"arg7":7,"arg8":8,"arg9":9,"arg10":10,"arg11":true}}',
+};
 
 export function IpcPlayground() {
   const toast = useToast();
@@ -34,6 +45,28 @@ export function IpcPlayground() {
   // Execution state
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<DebuggerResult | null>(null);
+
+  // Prefill state for BinaryLoader (used by "Load Demo")
+  const [binaryPrefill, setBinaryPrefill] = useState<{
+    network: NetworkType;
+    txHash: string;
+    outputIndex: string;
+  } | null>(null);
+
+  // Load demo example
+  const handleLoadDemo = useCallback(() => {
+    setBinary(null);
+    setArgs(DEMO_CONFIG.args);
+    setJsonRequest(DEMO_CONFIG.jsonRequest);
+    setResult(null);
+    // Trigger prefill with a new object reference so useEffect fires
+    setBinaryPrefill({
+      network: DEMO_CONFIG.network,
+      txHash: DEMO_CONFIG.txHash,
+      outputIndex: DEMO_CONFIG.outputIndex,
+    });
+    toast.addToast("success", t("ipc.demoLoaded"));
+  }, [toast, t]);
 
   // Initialize WASM
   useEffect(() => {
@@ -178,6 +211,24 @@ export function IpcPlayground() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Configuration */}
         <div className="space-y-6">
+          {/* Demo button */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-blue-800">{t("ipc.demoTitle")}</h3>
+                <p className="text-xs text-blue-600 mt-1">{t("ipc.demoDescription")}</p>
+              </div>
+              <button
+                onClick={handleLoadDemo}
+                disabled={isRunning}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors"
+              >
+                <BeakerIcon className="h-4 w-4" />
+                <span>{t("ipc.loadDemo")}</span>
+              </button>
+            </div>
+          </div>
+
           {/* Binary loader */}
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-lg font-medium text-gray-900 mb-4">
@@ -188,6 +239,7 @@ export function IpcPlayground() {
               binary={binary}
               onClear={() => setBinary(null)}
               disabled={isRunning}
+              prefill={binaryPrefill}
             />
           </div>
 

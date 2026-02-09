@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   ArrowUpTrayIcon,
   ArrowDownTrayIcon,
@@ -31,6 +31,12 @@ interface BinaryLoaderProps {
   onClear: () => void;
   /** Whether disabled */
   disabled?: boolean;
+  /** Pre-fill values for the fetch-from-chain panel (e.g. from demo) */
+  prefill?: {
+    network: NetworkType;
+    txHash: string;
+    outputIndex: string;
+  } | null;
 }
 
 // Network RPC endpoints
@@ -44,6 +50,7 @@ export function BinaryLoader({
   binary,
   onClear,
   disabled = false,
+  prefill,
 }: BinaryLoaderProps) {
   const { t } = useI18n();
   const [isDragging, setIsDragging] = useState(false);
@@ -57,6 +64,18 @@ export function BinaryLoader({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  // Apply prefill values when they change (e.g. from demo button)
+  useEffect(() => {
+    if (prefill) {
+      setNetwork(prefill.network);
+      setTxHash(prefill.txHash);
+      setOutputIndex(prefill.outputIndex);
+      setShowFetchPanel(true);
+      setError(null);
+      setSuccess(false);
+    }
+  }, [prefill]);
 
   const getCurrentRpc = useCallback(() => {
     if (network === "custom") return customRpc;
