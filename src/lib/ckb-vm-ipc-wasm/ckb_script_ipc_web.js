@@ -79,6 +79,51 @@ export function execute_script(binary, args, json_request) {
     return ExecuteResult.__wrap(ret[0]);
 }
 
+/**
+ * Execute a CKB script binary with IPC and mock transaction context.
+ *
+ * This extends `execute_script` by also providing CKB syscall support so that
+ * server scripts that read transaction information (e.g. ckb_load_script,
+ * ckb_load_cell_data) can work correctly.
+ *
+ * # Arguments
+ * * `binary` - The RISC-V binary (CKB script) as a byte array
+ * * `args` - Comma-separated command-line arguments for the script
+ * * `json_request` - The JSON request string to send to the server
+ * * `mock_tx_json` - The mock_tx.json content providing transaction context
+ * * `script_group_type` - "lock" or "type"
+ * * `script_hash` - Hex-encoded hash of the script being executed
+ *
+ * # Returns
+ * An `ExecuteResult` containing the JSON response, debug messages, and cycle count.
+ * @param {Uint8Array} binary
+ * @param {string} args
+ * @param {string} json_request
+ * @param {string} mock_tx_json
+ * @param {string} script_group_type
+ * @param {string} script_hash
+ * @returns {ExecuteResult}
+ */
+export function execute_script_with_mock_tx(binary, args, json_request, mock_tx_json, script_group_type, script_hash) {
+    const ptr0 = passArray8ToWasm0(binary, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(args, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passStringToWasm0(json_request, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passStringToWasm0(mock_tx_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len3 = WASM_VECTOR_LEN;
+    const ptr4 = passStringToWasm0(script_group_type, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len4 = WASM_VECTOR_LEN;
+    const ptr5 = passStringToWasm0(script_hash, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len5 = WASM_VECTOR_LEN;
+    const ret = wasm.execute_script_with_mock_tx(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ExecuteResult.__wrap(ret[0]);
+}
+
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,

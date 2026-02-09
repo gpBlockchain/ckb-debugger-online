@@ -146,6 +146,12 @@ const en: TranslationDict = {
   "ipc.demoSourceCode": "Contract Source Code",
   "ipc.loadDemo": "Load Demo",
   "ipc.demoLoaded": "Demo loaded — click Fetch to download the binary, then Execute",
+  "ipc.step4": "4. Mock TX Context (Optional)",
+  "ipc.mockTxHelp": "If your server contract uses CKB syscalls (e.g. ckb_load_script, ckb_load_cell_data), provide a mock_tx.json so these syscalls return meaningful data.",
+  "ipc.enableMockTx": "Enable Mock TX context for CKB syscalls",
+  "ipc.mockTxEnabled": "enabled",
+  "ipc.scriptGroup": "Script Group",
+  "ipc.noScriptGroups": "No script groups found in mock_tx. Please check the JSON format.",
 };
 
 // Chinese translations
@@ -283,6 +289,12 @@ const zh: TranslationDict = {
   "ipc.demoSourceCode": "合约源码",
   "ipc.loadDemo": "加载 Demo",
   "ipc.demoLoaded": "Demo 已加载 — 点击「获取」下载合约，然后点击「执行」",
+  "ipc.step4": "4. Mock TX 上下文（可选）",
+  "ipc.mockTxHelp": "如果服务端合约使用了 CKB 系统调用（如 ckb_load_script、ckb_load_cell_data），请提供 mock_tx.json 以便这些系统调用能返回正确的数据。",
+  "ipc.enableMockTx": "启用 Mock TX 上下文（支持 CKB 系统调用）",
+  "ipc.mockTxEnabled": "已启用",
+  "ipc.scriptGroup": "脚本组",
+  "ipc.noScriptGroups": "未在 mock_tx 中发现脚本组，请检查 JSON 格式。",
 };
 
 // All translations

@@ -11,6 +11,14 @@ interface VmWasmModule {
     args: string,
     json_request: string
   ) => ExecuteResultWasm;
+  execute_script_with_mock_tx: (
+    binary: Uint8Array,
+    args: string,
+    json_request: string,
+    mock_tx_json: string,
+    script_group_type: string,
+    script_hash: string
+  ) => ExecuteResultWasm;
 }
 
 interface ExecuteResultWasm {
@@ -95,6 +103,51 @@ export async function executeScript(
   }
 
   const result = wasmModule.execute_script(binary, args, jsonRequest);
+
+  return {
+    jsonResponse: result.json_response,
+    cycles: result.cycles,
+    debugMessages: Array.from(result.debug_messages),
+  };
+}
+
+/**
+ * Execute a CKB script binary with IPC and mock transaction context.
+ *
+ * This extends executeScript by also providing CKB syscall support so that
+ * server scripts that read transaction information (e.g. ckb_load_script,
+ * ckb_load_cell_data) can work correctly.
+ *
+ * @param binary - The RISC-V binary (CKB script) as a byte array
+ * @param args - Comma-separated arguments for the script
+ * @param jsonRequest - The JSON request string to send to the server
+ * @param mockTxJson - The mock_tx.json content providing transaction context
+ * @param scriptGroupType - "lock" or "type"
+ * @param scriptHash - Hex-encoded hash of the script being executed
+ * @returns The execution result including JSON response, cycles, and debug messages
+ */
+export async function executeScriptWithMockTx(
+  binary: Uint8Array,
+  args: string,
+  jsonRequest: string,
+  mockTxJson: string,
+  scriptGroupType: string,
+  scriptHash: string
+): Promise<IpcExecuteResult> {
+  await initializeIpcRunner();
+
+  if (!wasmModule) {
+    throw new Error("WASM module not initialized");
+  }
+
+  const result = wasmModule.execute_script_with_mock_tx(
+    binary,
+    args,
+    jsonRequest,
+    mockTxJson,
+    scriptGroupType,
+    scriptHash
+  );
 
   return {
     jsonResponse: result.json_response,

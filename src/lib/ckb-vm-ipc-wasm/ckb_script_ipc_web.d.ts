@@ -23,15 +23,36 @@ export class ExecuteResult {
  */
 export function execute_script(binary: Uint8Array, args: string, json_request: string): ExecuteResult;
 
+/**
+ * Execute a CKB script binary with IPC and mock transaction context.
+ *
+ * This extends `execute_script` by also providing CKB syscall support so that
+ * server scripts that read transaction information (e.g. ckb_load_script,
+ * ckb_load_cell_data) can work correctly.
+ *
+ * # Arguments
+ * * `binary` - The RISC-V binary (CKB script) as a byte array
+ * * `args` - Comma-separated command-line arguments for the script
+ * * `json_request` - The JSON request string to send to the server
+ * * `mock_tx_json` - The mock_tx.json content providing transaction context
+ * * `script_group_type` - "lock" or "type"
+ * * `script_hash` - Hex-encoded hash of the script being executed
+ *
+ * # Returns
+ * An `ExecuteResult` containing the JSON response, debug messages, and cycle count.
+ */
+export function execute_script_with_mock_tx(binary: Uint8Array, args: string, json_request: string, mock_tx_json: string, script_group_type: string, script_hash: string): ExecuteResult;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_executeresult_free: (a: number, b: number) => void;
-    readonly executeresult_json_response: (a: number) => [number, number];
+    readonly execute_script: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+    readonly execute_script_with_mock_tx: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => [number, number, number];
     readonly executeresult_cycles: (a: number) => bigint;
     readonly executeresult_debug_messages: (a: number) => any;
-    readonly execute_script: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+    readonly executeresult_json_response: (a: number) => [number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
