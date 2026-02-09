@@ -4,13 +4,17 @@ import {
   ArrowPathIcon,
   ExclamationTriangleIcon,
   BeakerIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
 } from "@heroicons/react/24/solid";
 import { BinaryLoader, type LoadedBinary } from "./BinaryLoader";
+import { FileUploader, type UploadedFile } from "./FileUploader";
 import { OutputConsole } from "./OutputConsole";
 import {
   checkIpcRunnerAvailability,
   executeScript,
   type IpcExecuteResult,
+  type MockTxParams,
 } from "../lib/ipcRunner";
 import type { NetworkType } from "../lib/txConverter";
 import type { DebuggerResult } from "../lib/wasmer";
@@ -41,6 +45,13 @@ export function IpcPlayground() {
   // Args and request
   const [args, setArgs] = useState("server_entry");
   const [jsonRequest, setJsonRequest] = useState("");
+
+  // Mock TX state (optional)
+  const [mockTxFile, setMockTxFile] = useState<UploadedFile | null>(null);
+  const [showMockTx, setShowMockTx] = useState(false);
+  const [mockTxCellIndex, setMockTxCellIndex] = useState(0);
+  const [mockTxCellType, setMockTxCellType] = useState<"input" | "output">("input");
+  const [mockTxScriptGroupType, setMockTxScriptGroupType] = useState<"lock" | "type">("lock");
 
   // Execution state
   const [isRunning, setIsRunning] = useState(false);
@@ -115,10 +126,24 @@ export function IpcPlayground() {
     const startTime = performance.now();
 
     try {
+      // Build mock_tx params if a mock_tx file is provided
+      let mockTxParams: MockTxParams | undefined;
+      if (mockTxFile) {
+        const decoder = new TextDecoder();
+        const mockTxJson = decoder.decode(mockTxFile.content);
+        mockTxParams = {
+          mockTxJson,
+          cellIndex: mockTxCellIndex,
+          cellType: mockTxCellType,
+          scriptGroupType: mockTxScriptGroupType,
+        };
+      }
+
       const execResult: IpcExecuteResult = await executeScript(
         binary.data,
         args,
-        jsonRequest
+        jsonRequest,
+        mockTxParams
       );
 
       const duration = performance.now() - startTime;
@@ -133,6 +158,9 @@ export function IpcPlayground() {
 
       let stdout = "";
       stdout += `✓ ${t("ipc.executionSuccess")}\n\n`;
+      if (mockTxFile) {
+        stdout += `Mock TX: ${mockTxFile.name} (cell_index=${mockTxCellIndex}, cell_type=${mockTxCellType}, script_group_type=${mockTxScriptGroupType})\n\n`;
+      }
       stdout += `${t("ipc.jsonResponse")}:\n${formattedJson}\n\n`;
       stdout += `${t("ipc.cyclesUsed")}: ${execResult.cycles.toLocaleString()}\n`;
       stdout += `${t("ipc.executionTime")}: ${(duration / 1000).toFixed(2)}s`;
@@ -170,7 +198,7 @@ export function IpcPlayground() {
     } finally {
       setIsRunning(false);
     }
-  }, [binary, args, jsonRequest, toast, t]);
+  }, [binary, args, jsonRequest, mockTxFile, mockTxCellIndex, mockTxCellType, mockTxScriptGroupType, toast, t]);
 
   // Clear
   const handleClear = useCallback(() => {
@@ -289,6 +317,86 @@ export function IpcPlayground() {
               spellCheck={false}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 resize-y"
             />
+          </div>
+
+          {/* Mock TX (optional, collapsible) */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <button
+              type="button"
+              onClick={() => setShowMockTx(!showMockTx)}
+              className="w-full flex items-center justify-between text-left"
+            >
+              <h2 className="text-lg font-medium text-gray-900">
+                {t("ipc.step4")}
+              </h2>
+              {showMockTx ? (
+                <ChevronUpIcon className="h-5 w-5 text-gray-400" />
+              ) : (
+                <ChevronDownIcon className="h-5 w-5 text-gray-400" />
+              )}
+            </button>
+            <p className="text-xs text-gray-500 mt-1">
+              {t("ipc.mockTxHelp")}
+            </p>
+
+            {showMockTx && (
+              <div className="mt-4 space-y-4">
+                <FileUploader
+                  label={t("ipc.mockTxFile")}
+                  accept=".json"
+                  helpText={t("ipc.mockTxFileHelp")}
+                  file={mockTxFile}
+                  onFileChange={setMockTxFile}
+                  disabled={isRunning}
+                />
+
+                {mockTxFile && (
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">
+                        {t("params.cellIndex")}
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={mockTxCellIndex}
+                        onChange={(e) => setMockTxCellIndex(parseInt(e.target.value, 10) || 0)}
+                        disabled={isRunning}
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">
+                        {t("params.cellType")}
+                      </label>
+                      <select
+                        value={mockTxCellType}
+                        onChange={(e) => setMockTxCellType(e.target.value as "input" | "output")}
+                        disabled={isRunning}
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                      >
+                        <option value="input">input</option>
+                        <option value="output">output</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">
+                        {t("params.scriptGroupType")}
+                      </label>
+                      <select
+                        value={mockTxScriptGroupType}
+                        onChange={(e) => setMockTxScriptGroupType(e.target.value as "lock" | "type")}
+                        disabled={isRunning}
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                      >
+                        <option value="lock">lock</option>
+                        <option value="type">type</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Execute / Clear buttons */}

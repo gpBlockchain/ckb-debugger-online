@@ -11,6 +11,15 @@ interface VmWasmModule {
     args: string,
     json_request: string
   ) => ExecuteResultWasm;
+  execute_script_with_mock_tx?: (
+    binary: Uint8Array,
+    args: string,
+    json_request: string,
+    mock_tx_json: string,
+    cell_index: number,
+    cell_type: string,
+    script_group_type: string
+  ) => ExecuteResultWasm;
 }
 
 interface ExecuteResultWasm {
@@ -24,6 +33,18 @@ export interface IpcExecuteResult {
   jsonResponse: string;
   cycles: number;
   debugMessages: string[];
+}
+
+/** Optional mock_tx parameters for CKB syscall support */
+export interface MockTxParams {
+  /** The mock_tx JSON string */
+  mockTxJson: string;
+  /** Cell index in the mock_tx */
+  cellIndex: number;
+  /** Cell type: "input" or "output" */
+  cellType: "input" | "output";
+  /** Script group type: "lock" or "type" */
+  scriptGroupType: "lock" | "type";
 }
 
 // Module state
@@ -76,17 +97,26 @@ export async function checkIpcRunnerAvailability(): Promise<{
 }
 
 /**
+ * Check if the WASM module supports mock_tx execution
+ */
+export function isMockTxSupported(): boolean {
+  return wasmModule != null && typeof wasmModule.execute_script_with_mock_tx === "function";
+}
+
+/**
  * Execute a CKB script binary with IPC
  *
  * @param binary - The RISC-V binary (CKB script) as a byte array
  * @param args - Comma-separated arguments for the script (e.g. "server_entry")
  * @param jsonRequest - The JSON request string to send to the server
+ * @param mockTxParams - Optional mock_tx parameters for CKB syscall support
  * @returns The execution result including JSON response, cycles, and debug messages
  */
 export async function executeScript(
   binary: Uint8Array,
   args: string,
-  jsonRequest: string
+  jsonRequest: string,
+  mockTxParams?: MockTxParams
 ): Promise<IpcExecuteResult> {
   await initializeIpcRunner();
 
@@ -94,7 +124,21 @@ export async function executeScript(
     throw new Error("WASM module not initialized");
   }
 
-  const result = wasmModule.execute_script(binary, args, jsonRequest);
+  let result: ExecuteResultWasm;
+
+  if (mockTxParams && typeof wasmModule.execute_script_with_mock_tx === "function") {
+    result = wasmModule.execute_script_with_mock_tx(
+      binary,
+      args,
+      jsonRequest,
+      mockTxParams.mockTxJson,
+      mockTxParams.cellIndex,
+      mockTxParams.cellType,
+      mockTxParams.scriptGroupType
+    );
+  } else {
+    result = wasmModule.execute_script(binary, args, jsonRequest);
+  }
 
   return {
     jsonResponse: result.json_response,
