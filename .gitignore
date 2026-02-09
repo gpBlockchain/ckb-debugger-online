@@ -26,6 +26,10 @@ dist-ssr
 # Rust build artifacts (in ckb-standalone-debugger)
 ckb-standalone-debugger/target/
 
+# ckb-vm-web WASM build artifacts
+ckb-vm-web/target/
+ckb-vm-web/pkg/
+
 # macOS
 .DS_Store
 *.DS_Store
