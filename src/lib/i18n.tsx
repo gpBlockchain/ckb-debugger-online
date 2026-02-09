@@ -143,6 +143,7 @@ const en: TranslationDict = {
   "ipc.error.emptyCellData": "Cell data is empty, no binary found at this output",
   "ipc.demoTitle": "Quick Start Demo",
   "ipc.demoDescription": "Load an example that fetches a contract from testnet and sends an IPC request",
+  "ipc.demoSourceCode": "Contract Source Code",
   "ipc.loadDemo": "Load Demo",
   "ipc.demoLoaded": "Demo loaded — click Fetch to download the binary, then Execute",
 };
@@ -279,6 +280,7 @@ const zh: TranslationDict = {
   "ipc.error.emptyCellData": "Cell 数据为空，该 Output 中没有找到二进制文件",
   "ipc.demoTitle": "快速体验 Demo",
   "ipc.demoDescription": "加载一个示例：从测试网获取合约并发送 IPC 请求",
+  "ipc.demoSourceCode": "合约源码",
   "ipc.loadDemo": "加载 Demo",
   "ipc.demoLoaded": "Demo 已加载 — 点击「获取」下载合约，然后点击「执行」",
 };

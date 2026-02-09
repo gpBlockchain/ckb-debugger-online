@@ -217,6 +217,17 @@ export function IpcPlayground() {
               <div>
                 <h3 className="text-sm font-medium text-blue-800">{t("ipc.demoTitle")}</h3>
                 <p className="text-xs text-blue-600 mt-1">{t("ipc.demoDescription")}</p>
+                <p className="text-xs text-blue-600 mt-1">
+                  {t("ipc.demoSourceCode")}:{" "}
+                  <a
+                    href="https://github.com/XuJiandong/ckb-script-ipc/blob/main/contracts/unit-tests/src/server_entry.rs"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline hover:text-blue-800"
+                  >
+                    server_entry.rs
+                  </a>
+                </p>
               </div>
               <button
                 onClick={handleLoadDemo}
