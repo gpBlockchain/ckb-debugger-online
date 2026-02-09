@@ -723,10 +723,10 @@ fn parse_mock_tx(
         }
     }
 
-    // Compute tx_hash from the transaction
-    // For simplicity, we compute it from the serialized tx JSON
-    // In real CKB, tx_hash is computed from the molecule-serialized RawTransaction
-    // Here we use a simplified approach: hash the "tx" portion of JSON
+    // Compute tx_hash from the transaction.
+    // NOTE: This is a simplified hash for mock purposes only. Real CKB computes
+    // tx_hash from molecule-serialized RawTransaction. Scripts that depend on
+    // exact tx_hash matching may not work correctly with this approximation.
     let tx_json_str = v["tx"].to_string();
     let tx_hash = ckb_blake2b_256(tx_json_str.as_bytes());
 
