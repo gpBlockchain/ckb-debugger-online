@@ -111,7 +111,7 @@ export function hexToBytes(hex: string): Uint8Array {
   if (cleanHex.length === 0) return new Uint8Array(0);
   const bytes = new Uint8Array(cleanHex.length / 2);
   for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(cleanHex.substr(i * 2, 2), 16);
+    bytes[i] = parseInt(cleanHex.slice(i * 2, i * 2 + 2), 16);
   }
   return bytes;
 }
