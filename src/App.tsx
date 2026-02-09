@@ -8,6 +8,7 @@ import {
   TxFetcher,
   IpcPlayground,
   ModeSelector,
+  MockTxEditor,
   useToast,
   type UploadedFile,
   type MockTxParams,
@@ -190,6 +191,13 @@ function App() {
                     onFileChange={setMockTxFile}
                     disabled={debugger_.isRunning}
                   />
+                  {mockTxFile && (
+                    <MockTxEditor
+                      file={mockTxFile}
+                      onFileChange={setMockTxFile}
+                      disabled={debugger_.isRunning}
+                    />
+                  )}
                   <FileUploader
                     label={t("fileUpload.binaryReplacement")}
                     helpText={t("fileUpload.binaryHelp")}
