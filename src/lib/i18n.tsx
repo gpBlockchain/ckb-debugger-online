@@ -110,6 +110,13 @@ const en: TranslationDict = {
   "progress.fetchingHeaders": "Fetching block headers",
   "progress.conversionComplete": "Conversion complete",
 
+  // Mock TX Editor
+  "mockTxEditor.download": "Download JSON",
+  "mockTxEditor.editJson": "Edit JSON",
+  "mockTxEditor.apply": "Apply Changes",
+  "mockTxEditor.applied": "Applied",
+  "mockTxEditor.jsonError": "Invalid JSON",
+
   // Mode selector
   "mode.debugger": "Mock TX Debugger",
   "mode.ipc": "Script IPC Playground",
@@ -246,6 +253,13 @@ const zh: TranslationDict = {
   "progress.fetchingCellDeps": "正在获取依赖 Cells",
   "progress.fetchingHeaders": "正在获取区块头",
   "progress.conversionComplete": "转换完成",
+
+  // Mock TX Editor
+  "mockTxEditor.download": "下载 JSON",
+  "mockTxEditor.editJson": "编辑 JSON",
+  "mockTxEditor.apply": "应用修改",
+  "mockTxEditor.applied": "已应用",
+  "mockTxEditor.jsonError": "JSON 格式错误",
 
   // Mode selector
   "mode.debugger": "Mock TX 调试器",

@@ -7,3 +7,4 @@ export { TxFetcher } from "./TxFetcher";
 export { BinaryLoader, type LoadedBinary } from "./BinaryLoader";
 export { IpcPlayground } from "./IpcPlayground";
 export { ModeSelector, type AppMode } from "./ModeSelector";
+export { MockTxEditor } from "./MockTxEditor";
