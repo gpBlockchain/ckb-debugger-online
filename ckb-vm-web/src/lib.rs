@@ -866,7 +866,11 @@ impl<Mac: SupportMachine> Syscalls<Mac> for CkbSyscall {
                 let size_addr = machine.registers()[A1].clone();
                 let offset = machine.registers()[A2].to_u64();
 
-                // Compute tx hash from serialized tx JSON
+                // NOTE: This computes a deterministic hash from the JSON representation
+                // of the tx for mock/testing purposes. It does NOT match the real CKB
+                // transaction hash (which requires molecule serialization). For contracts
+                // that only need a unique identifier, this is sufficient. For contracts
+                // that compare the tx hash against an on-chain value, use ckb-debugger.
                 let tx_json = self.mock_tx.json["tx"].to_string();
                 let tx_hash = ckb_blake2b_256(tx_json.as_bytes());
 
@@ -1088,7 +1092,10 @@ impl<Mac: SupportMachine> Syscalls<Mac> for CkbSyscall {
                         }
                     }
                     CKB_CELL_FIELD_OCCUPIED_CAPACITY => {
-                        // Simplified: return capacity as occupied capacity
+                        // Mock implementation: returns the cell's capacity value.
+                        // The real occupied capacity accounts for cell size (capacity +
+                        // data + lock script + type script), but for mock/testing
+                        // purposes this approximation is usually sufficient.
                         let cap_hex = cell_output["capacity"].as_str().unwrap_or("0x0");
                         let capacity = hex_to_u64(cap_hex);
                         let data = capacity.to_le_bytes();
@@ -1174,8 +1181,12 @@ impl<Mac: SupportMachine> Syscalls<Mac> for CkbSyscall {
             }
 
             SYS_LOAD_CELL | SYS_LOAD_INPUT | SYS_LOAD_TRANSACTION => {
-                // These require full molecule serialization which is complex.
-                // Return ITEM_MISSING for now; most contracts use *_by_field variants.
+                // These syscalls require full molecule serialization of Cell/Input/
+                // Transaction structures, which is complex to implement. They return
+                // ITEM_MISSING here. Most contracts use the *_by_field variants
+                // (load_cell_by_field, load_input_by_field) which are fully supported.
+                // If your contract uses these raw loading syscalls, consider using the
+                // Mock TX Debugger mode with ckb-debugger instead.
                 machine.set_register(A0, Mac::REG::from_u64(CKB_ITEM_MISSING));
                 Ok(true)
             }

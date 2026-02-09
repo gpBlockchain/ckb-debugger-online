@@ -360,7 +360,10 @@ export function IpcPlayground() {
                         type="number"
                         min="0"
                         value={mockTxCellIndex}
-                        onChange={(e) => setMockTxCellIndex(parseInt(e.target.value, 10) || 0)}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          if (!isNaN(val) && val >= 0) setMockTxCellIndex(val);
+                        }}
                         disabled={isRunning}
                         className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
                       />
