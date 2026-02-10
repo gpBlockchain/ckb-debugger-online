@@ -93,9 +93,8 @@ export function IpcPlayground() {
     let cancelled = false;
     (async () => {
       setIsInitializing(true);
-      // Initialize both WASM modules - IPC runner and debugger
+      // Initialize IPC runner WASM; also try debugger WASM for mock_tx mode
       const avail = await checkIpcRunnerAvailability();
-      // Also try to init debugger WASM for mock_tx mode
       try { await initializeWasmer(); } catch { /* ok if not available */ }
       if (cancelled) return;
       setIsAvailable(avail.available);
@@ -116,7 +115,7 @@ export function IpcPlayground() {
     setIsInitializing(true);
     setInitError(null);
     const avail = await checkIpcRunnerAvailability();
-    try { await initializeWasmer(); } catch { /* ok */ }
+    try { await initializeWasmer(); } catch { /* ok if not available */ }
     setIsAvailable(avail.available);
     setInitError(avail.available ? null : (avail.error || null));
     setIsInitializing(false);
