@@ -1,61 +1,16 @@
 /**
- * CKB VM IPC Runner - TypeScript wrapper for the ckb-vm WASM module
- * Provides functions to execute CKB scripts with IPC in the browser
+ * CKB IPC Runner - TypeScript wrapper for the ckb-debugger WASM module's ipc_call function.
+ *
+ * Since ckb-standalone-debugger now natively supports IPC calls
+ * (see: https://github.com/gpBlockchain/ckb-standalone-debugger/pull/1),
+ * we no longer maintain a separate IPC VM. Instead, we reuse the existing
+ * ckb-debugger-wasm module which exposes `ipc_call`.
  */
 
-// The WASM module types (matching the Rust wasm-bindgen exports)
-interface VmWasmModule {
-  default: () => Promise<void>;
-  execute_script: (
-    binary: Uint8Array,
-    args: string,
-    json_request: string
-  ) => ExecuteResultWasm;
-}
+import { initializeWasmer } from "./wasmer";
 
-interface ExecuteResultWasm {
-  json_response: string;
-  cycles: number;
-  debug_messages: string[];
-}
-
-/** Result of executing a CKB script via IPC */
-export interface IpcExecuteResult {
-  jsonResponse: string;
-  cycles: number;
-  debugMessages: string[];
-}
-
-// Module state
-let wasmModule: VmWasmModule | null = null;
-let isInitialized = false;
-let initPromise: Promise<void> | null = null;
-
-/**
- * Initialize the ckb-vm WASM module
- */
-export async function initializeIpcRunner(): Promise<void> {
-  if (isInitialized) return;
-  if (initPromise) return initPromise;
-
-  initPromise = (async () => {
-    try {
-      // Dynamic import - the WASM module may not be compiled yet
-      const mod = await import("./ckb-vm-ipc-wasm/ckb_script_ipc_web.js");
-      await mod.default();
-      wasmModule = mod as unknown as VmWasmModule;
-      isInitialized = true;
-      console.log("CKB VM IPC WASM module initialized");
-    } catch (error) {
-      initPromise = null;
-      throw new Error(
-        `Failed to load ckb-vm IPC WASM module: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  })();
-
-  return initPromise;
-}
+// Re-export initializeWasmer as the IPC runner init (they share the same WASM module)
+export const initializeIpcRunner = initializeWasmer;
 
 /**
  * Check if the IPC runner WASM module is available
@@ -70,37 +25,157 @@ export async function checkIpcRunnerAvailability(): Promise<{
   } catch (error) {
     return {
       available: false,
-      error: `IPC WASM module not available: ${error instanceof Error ? error.message : String(error)}`,
+      error: `WASM module not available: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 }
 
+/** IPC request structure matching the ckb-standalone-debugger format */
+export interface IpcRequest {
+  version: number;
+  method_id: number;
+  payload_format: string;
+  payload: unknown;
+}
+
+/** IPC response structure returned by ipc_call */
+export interface IpcResponse {
+  version?: number;
+  error_code?: number;
+  payload_format?: string;
+  payload?: unknown;
+  error?: string;
+}
+
+/** Result of executing an IPC call */
+export interface IpcExecuteResult {
+  /** Raw JSON response string from ipc_call */
+  rawResponse: string;
+  /** Parsed response object */
+  response: IpcResponse;
+}
+
 /**
- * Execute a CKB script binary with IPC
+ * Execute an IPC call to a CKB script.
  *
- * @param binary - The RISC-V binary (CKB script) as a byte array
- * @param args - Comma-separated arguments for the script (e.g. "server_entry")
- * @param jsonRequest - The JSON request string to send to the server
- * @returns The execution result including JSON response, cycles, and debug messages
+ * The script binary must be embedded in the mock_tx (as a cell_dep).
+ * The full CKB verifier is used, so all CKB syscalls work correctly.
+ *
+ * @param mockTxJson - JSON string of a mock transaction (ReprMockTransaction)
+ * @param scriptGroupType - "lock" or "type"
+ * @param scriptHash - Hex-encoded script hash (0x-prefixed)
+ * @param maxCycles - Maximum cycles allowed
+ * @param ipcRequest - IPC request object
+ * @returns The IPC response
  */
-export async function executeScript(
-  binary: Uint8Array,
-  args: string,
-  jsonRequest: string
+export async function executeIpcCall(
+  mockTxJson: string,
+  scriptGroupType: string,
+  scriptHash: string,
+  maxCycles: string,
+  ipcRequest: IpcRequest
 ): Promise<IpcExecuteResult> {
   await initializeIpcRunner();
 
-  if (!wasmModule) {
-    throw new Error("WASM module not initialized");
+  // Dynamic import to avoid circular dependency issues
+  const { ipc_call } = await import("./ckb-debugger-wasm/ckb_debugger");
+
+  const ipcRequestJson = JSON.stringify(ipcRequest);
+
+  const rawResponse = ipc_call(
+    mockTxJson,
+    scriptGroupType,
+    scriptHash,
+    maxCycles,
+    ipcRequestJson
+  );
+
+  let response: IpcResponse;
+  try {
+    response = JSON.parse(rawResponse) as IpcResponse;
+  } catch {
+    response = { error: rawResponse };
   }
 
-  const result = wasmModule.execute_script(binary, args, jsonRequest);
+  return { rawResponse, response };
+}
 
-  return {
-    jsonResponse: result.json_response,
-    cycles: result.cycles,
-    debugMessages: Array.from(result.debug_messages),
-  };
+/**
+ * Execute a script binary directly with an IPC request (no mock_tx required).
+ * A minimal mock transaction is created internally to host the binary.
+ *
+ * @param binary - The compiled CKB RISC-V script binary
+ * @param args - Hex-encoded script args (with or without 0x prefix)
+ * @param ipcRequest - IPC request object
+ * @returns The IPC response
+ */
+export async function executeScriptDirect(
+  binary: Uint8Array,
+  args: string,
+  ipcRequest: IpcRequest
+): Promise<IpcExecuteResult> {
+  await initializeIpcRunner();
+
+  const { execute_script } = await import("./ckb-debugger-wasm/ckb_debugger");
+
+  const ipcRequestJson = JSON.stringify(ipcRequest);
+  const rawResponse = execute_script(binary, args, ipcRequestJson);
+
+  let response: IpcResponse;
+  try {
+    response = JSON.parse(rawResponse) as IpcResponse;
+  } catch {
+    response = { error: rawResponse };
+  }
+
+  return { rawResponse, response };
+}
+
+/**
+ * Execute a script binary with an IPC request, using a mock_tx for full transaction context.
+ * The binary replaces the script at the specified cell position in the mock_tx.
+ *
+ * @param binary - The compiled CKB RISC-V script binary
+ * @param args - Hex-encoded script args (with or without 0x prefix, empty string for no override)
+ * @param ipcRequest - IPC request object
+ * @param mockTxJson - JSON string of a mock transaction (ReprMockTransaction)
+ * @param cellIndex - Index of the cell containing the target script
+ * @param cellType - "input" or "output"
+ * @param scriptGroupType - "lock" or "type"
+ * @returns The IPC response
+ */
+export async function executeScriptWithMockTx(
+  binary: Uint8Array,
+  args: string,
+  ipcRequest: IpcRequest,
+  mockTxJson: string,
+  cellIndex: number,
+  cellType: string,
+  scriptGroupType: string
+): Promise<IpcExecuteResult> {
+  await initializeIpcRunner();
+
+  const { execute_script_with_mock_tx } = await import("./ckb-debugger-wasm/ckb_debugger");
+
+  const ipcRequestJson = JSON.stringify(ipcRequest);
+  const rawResponse = execute_script_with_mock_tx(
+    binary,
+    args,
+    ipcRequestJson,
+    mockTxJson,
+    cellIndex,
+    cellType,
+    scriptGroupType
+  );
+
+  let response: IpcResponse;
+  try {
+    response = JSON.parse(rawResponse) as IpcResponse;
+  } catch {
+    response = { error: rawResponse };
+  }
+
+  return { rawResponse, response };
 }
 
 /**

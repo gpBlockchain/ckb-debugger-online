@@ -101,6 +101,138 @@ export function run_json(mock_tx, script_group_type, script_hash, max_cycle) {
     }
 }
 
+/**
+ * Perform an IPC call to a CKB script.
+ *
+ * # Arguments
+ * * `mock_tx` - JSON string of a mock transaction (ReprMockTransaction)
+ * * `script_group_type` - "lock" or "type"
+ * * `script_hash` - hex-encoded script hash
+ * * `max_cycle` - maximum cycles allowed
+ * * `ipc_request` - JSON string of an IPC request with fields: version, method_id, payload_format, payload
+ *
+ * # Returns
+ * JSON string of the IPC response with fields: version, error_code, payload_format, payload
+ * @param {string} mock_tx
+ * @param {string} script_group_type
+ * @param {string} script_hash
+ * @param {string} max_cycle
+ * @param {string} ipc_request
+ * @returns {string}
+ */
+export function ipc_call(mock_tx, script_group_type, script_hash, max_cycle, ipc_request) {
+    let deferred6_0;
+    let deferred6_1;
+    try {
+        const ptr0 = passStringToWasm0(mock_tx, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(script_group_type, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(script_hash, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(max_cycle, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passStringToWasm0(ipc_request, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len4 = WASM_VECTOR_LEN;
+        const ret = wasm.ipc_call(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4);
+        deferred6_0 = ret[0];
+        deferred6_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred6_0, deferred6_1, 1);
+    }
+}
+
+function passArray8ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 1, 1) >>> 0;
+    getUint8ArrayMemory0().set(arg, ptr / 1);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+/**
+ * Execute a script binary directly with an IPC request, without needing a mock_tx.
+ * A minimal mock transaction is created internally to host the binary.
+ *
+ * # Arguments
+ * * `binary` - The compiled CKB RISC-V script binary
+ * * `args` - Hex-encoded script args (with or without 0x prefix)
+ * * `json_request` - JSON string of an IPC request with fields: version, method_id, payload_format, payload
+ *
+ * # Returns
+ * JSON string of the IPC response
+ * @param {Uint8Array} binary
+ * @param {string} args
+ * @param {string} json_request
+ * @returns {string}
+ */
+export function execute_script(binary, args, json_request) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        const ptr0 = passArray8ToWasm0(binary, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(args, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(json_request, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.execute_script(ptr0, len0, ptr1, len1, ptr2, len2);
+        deferred4_0 = ret[0];
+        deferred4_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+    }
+}
+
+/**
+ * Execute a script binary with an IPC request, using a mock_tx for full transaction context.
+ * The binary replaces the script at the specified cell position in the mock_tx.
+ *
+ * # Arguments
+ * * `binary` - The compiled CKB RISC-V script binary
+ * * `args` - Hex-encoded script args (with or without 0x prefix, empty string for no override)
+ * * `json_request` - JSON string of an IPC request
+ * * `mock_tx_json` - JSON string of a mock transaction (ReprMockTransaction)
+ * * `cell_index` - Index of the cell containing the target script
+ * * `cell_type` - "input" or "output"
+ * * `script_group_type` - "lock" or "type"
+ *
+ * # Returns
+ * JSON string of the IPC response
+ * @param {Uint8Array} binary
+ * @param {string} args
+ * @param {string} json_request
+ * @param {string} mock_tx_json
+ * @param {number} cell_index
+ * @param {string} cell_type
+ * @param {string} script_group_type
+ * @returns {string}
+ */
+export function execute_script_with_mock_tx(binary, args, json_request, mock_tx_json, cell_index, cell_type, script_group_type) {
+    let deferred7_0;
+    let deferred7_1;
+    try {
+        const ptr0 = passArray8ToWasm0(binary, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(args, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(json_request, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(mock_tx_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passStringToWasm0(cell_type, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len4 = WASM_VECTOR_LEN;
+        const ptr5 = passStringToWasm0(script_group_type, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len5 = WASM_VECTOR_LEN;
+        const ret = wasm.execute_script_with_mock_tx(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, cell_index, ptr4, len4, ptr5, len5);
+        deferred7_0 = ret[0];
+        deferred7_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred7_0, deferred7_1, 1);
+    }
+}
+
 async function __wbg_load(module, imports) {
     if (typeof Response === 'function' && module instanceof Response) {
         if (typeof WebAssembly.instantiateStreaming === 'function') {
