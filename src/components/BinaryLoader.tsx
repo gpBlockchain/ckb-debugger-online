@@ -65,7 +65,7 @@ export function BinaryLoader({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  // Apply prefill values when they change (e.g. from demo button)
+  // Apply prefill values and auto-fetch when they change (e.g. from demo button)
   useEffect(() => {
     if (prefill) {
       setNetwork(prefill.network);
@@ -74,7 +74,46 @@ export function BinaryLoader({
       setShowFetchPanel(true);
       setError(null);
       setSuccess(false);
+      // Auto-fetch after setting values
+      (async () => {
+        const rpc = prefill.network === "custom" ? "" :
+          prefill.network === "mainnet" ? NETWORK_RPC.mainnet : NETWORK_RPC.testnet;
+        if (!rpc) return;
+
+        setIsLoading(true);
+        try {
+          const client = createClient(prefill.network, "");
+          const result = await client.getTransaction(prefill.txHash);
+          if (!result) {
+            setError(t("error.txNotFound"));
+            return;
+          }
+          const tx = result.transaction;
+          const idx = parseInt(prefill.outputIndex, 10);
+          if (isNaN(idx) || idx < 0 || idx >= tx.outputsData.length) {
+            setError(`Output index ${idx} out of bounds (${tx.outputsData.length} outputs)`);
+            return;
+          }
+          const dataHex = tx.outputsData[idx];
+          if (!dataHex || dataHex === "0x") {
+            setError(t("ipc.error.emptyCellData"));
+            return;
+          }
+          const binaryData = hexToBytes(dataHex);
+          onBinaryReady({
+            name: `cell_${prefill.txHash.slice(0, 10)}_${idx}`,
+            data: binaryData,
+            size: binaryData.length,
+          });
+          setSuccess(true);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err));
+        } finally {
+          setIsLoading(false);
+        }
+      })();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefill]);
 
   const getCurrentRpc = useCallback(() => {

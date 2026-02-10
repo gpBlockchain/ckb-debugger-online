@@ -4,19 +4,24 @@ import {
   ArrowPathIcon,
   ExclamationTriangleIcon,
   BeakerIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
 } from "@heroicons/react/24/solid";
 import { OutputConsole } from "./OutputConsole";
 import {
   checkIpcRunnerAvailability,
   executeIpcCall,
+  executeScriptDirect,
+  executeScriptWithMockTx,
   hexToBytes,
   type IpcRequest,
+  type IpcExecuteResult,
 } from "../lib/ipcRunner";
 import type { DebuggerResult } from "../lib/wasmer";
 import { useToast } from "./Toast";
 import { useI18n } from "../lib/i18n";
 import { blake2b } from "blakejs";
-import { TxFetcher, FileUploader, type UploadedFile } from "./index";
+import { TxFetcher, FileUploader, type UploadedFile, BinaryLoader, type LoadedBinary } from "./index";
 
 // ---------------------------------------------------------------------------
 // Script hash helpers (compute blake2b-256 with CKB personalization)
@@ -78,6 +83,10 @@ interface ScriptGroupOption {
   label: string;
   scriptGroupType: "lock" | "type";
   scriptHash: string;
+  /** First matching cell index for this script group */
+  cellIndex: number;
+  /** Cell type: "input" or "output" */
+  cellType: "input" | "output";
 }
 
 function extractScriptGroups(mockTxStr: string): ScriptGroupOption[] {
@@ -91,7 +100,8 @@ function extractScriptGroups(mockTxStr: string): ScriptGroupOption[] {
     // Extract from inputs
     const inputs = mockInfo.inputs as Array<Record<string, unknown>>;
     if (inputs) {
-      for (const inp of inputs) {
+      for (let i = 0; i < inputs.length; i++) {
+        const inp = inputs[i];
         const output = inp.output as Record<string, unknown>;
         if (!output) continue;
         const lock = output.lock as Record<string, unknown>;
@@ -107,6 +117,8 @@ function extractScriptGroups(mockTxStr: string): ScriptGroupOption[] {
               label: `Lock ${hash.slice(0, 10)}...${hash.slice(-6)}`,
               scriptGroupType: "lock",
               scriptHash: hash,
+              cellIndex: i,
+              cellType: "input",
             });
           }
         }
@@ -120,9 +132,11 @@ function extractScriptGroups(mockTxStr: string): ScriptGroupOption[] {
           const key = `type:${hash}`;
           if (!groups.has(key)) {
             groups.set(key, {
-              label: `Type ${hash.slice(0, 10)}...${hash.slice(-6)}`,
+              label: `Type (input[${i}]) ${hash.slice(0, 10)}...${hash.slice(-6)}`,
               scriptGroupType: "type",
               scriptHash: hash,
+              cellIndex: i,
+              cellType: "input",
             });
           }
         }
@@ -132,7 +146,8 @@ function extractScriptGroups(mockTxStr: string): ScriptGroupOption[] {
     // Extract from outputs
     const outputs = tx.outputs as Array<Record<string, unknown>>;
     if (outputs) {
-      for (const out of outputs) {
+      for (let i = 0; i < outputs.length; i++) {
+        const out = outputs[i];
         const type_ = out.type as Record<string, unknown> | null;
         if (type_) {
           const hash = computeScriptHash({
@@ -143,9 +158,11 @@ function extractScriptGroups(mockTxStr: string): ScriptGroupOption[] {
           const key = `type:${hash}`;
           if (!groups.has(key)) {
             groups.set(key, {
-              label: `Type ${hash.slice(0, 10)}...${hash.slice(-6)}`,
+              label: `Type (output[${i}]) ${hash.slice(0, 10)}...${hash.slice(-6)}`,
               scriptGroupType: "type",
               scriptHash: hash,
+              cellIndex: i,
+              cellType: "output",
             });
           }
         }
@@ -167,9 +184,23 @@ export function IpcPlayground() {
   const [initError, setInitError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
 
-  // Mock TX state (required for ipc_call)
+  // Script binary state (required)
+  const [binaryFile, setBinaryFile] = useState<LoadedBinary | null>(null);
+  const [scriptArgs, setScriptArgs] = useState("0x");
+  const [binaryPrefill, setBinaryPrefill] = useState<{
+    network: "mainnet" | "testnet" | "custom";
+    txHash: string;
+    outputIndex: string;
+    _ts?: number; // timestamp to force re-trigger
+  } | null>(null);
+
+  // Mock TX state (optional)
   const [mockTxFile, setMockTxFile] = useState<UploadedFile | null>(null);
   const [selectedScriptGroup, setSelectedScriptGroup] = useState<string>("");
+  const [mockTxExpanded, setMockTxExpanded] = useState(false);
+  const [cellIndex, setCellIndex] = useState(0);
+  const [cellType, setCellType] = useState("input");
+  const [scriptGroupType, setScriptGroupType] = useState("lock");
 
   // IPC Request fields
   const [ipcPayload, setIpcPayload] = useState("");
@@ -198,21 +229,48 @@ export function IpcPlayground() {
     return extractScriptGroups(mockTxStr);
   }, [mockTxStr]);
 
-  // Auto-select first script group
+  // Auto-select first script group and sync cellIndex/cellType/scriptGroupType
   useEffect(() => {
     if (scriptGroups.length > 0 && !selectedScriptGroup) {
-      setSelectedScriptGroup(`${scriptGroups[0].scriptGroupType}:${scriptGroups[0].scriptHash}`);
+      const first = scriptGroups[0];
+      setSelectedScriptGroup(`${first.scriptGroupType}:${first.scriptHash}`);
+      setCellIndex(first.cellIndex);
+      setCellType(first.cellType);
+      setScriptGroupType(first.scriptGroupType);
     }
   }, [scriptGroups, selectedScriptGroup]);
 
-  // Load demo example
+  // When selectedScriptGroup changes, sync cellIndex/cellType/scriptGroupType
+  const handleScriptGroupChange = useCallback((value: string) => {
+    setSelectedScriptGroup(value);
+    const match = scriptGroups.find(
+      (g) => `${g.scriptGroupType}:${g.scriptHash}` === value
+    );
+    if (match) {
+      setCellIndex(match.cellIndex);
+      setCellType(match.cellType);
+      setScriptGroupType(match.scriptGroupType);
+    }
+  }, [scriptGroups]);
+
+  // Load demo example - auto-fetch binary from testnet
   const handleLoadDemo = useCallback(() => {
+    setBinaryFile(null);
+    setScriptArgs("0x");
     setMockTxFile(null);
     setSelectedScriptGroup("");
+    setMockTxExpanded(false);
     setMethodId(0);
     setIpcPayload('{"TestPrimitiveTypes":{"arg1":1,"arg2":2,"arg3":3,"arg4":4,"arg5":5,"arg6":6,"arg7":7,"arg8":8,"arg9":9,"arg10":10,"arg11":true}}');
     setMaxCycles("70000000");
     setResult(null);
+    // Trigger BinaryLoader to fetch from testnet (timestamp ensures re-trigger)
+    setBinaryPrefill({
+      network: "testnet",
+      txHash: "0xd9f0427fd961edfab00d1e37cec34ec301eed54e7099628c7b59bff003a8956a",
+      outputIndex: "0",
+      _ts: Date.now(),
+    });
     toast.addToast("info", t("ipc.demoLoadedNew"));
   }, [toast, t]);
 
@@ -253,15 +311,20 @@ export function IpcPlayground() {
     toast.addToast("success", t("success.mockTxGenerated"));
   }, [toast, t]);
 
+  // Determine if we have a mock_tx context
+  const hasMockTx = mockTxFile !== null && mockTxStr !== "";
+
+  // Determine execution mode:
+  // Mode A: binary only (no mock_tx) → execute_script
+  // Mode B: binary + mock_tx → execute_script_with_mock_tx
+  // Mode C: mock_tx only (no binary) → ipc_call (legacy/demo mode)
+  const hasBinary = binaryFile !== null;
+
   // Execute IPC call
   const handleExecute = useCallback(async () => {
-    if (!mockTxFile || !mockTxStr) {
-      toast.addToast("warning", t("ipc.error.loadMockTx"));
-      return;
-    }
-
-    if (!selectedScriptGroup) {
-      toast.addToast("warning", t("ipc.error.selectScriptGroup"));
+    // Must have either binary or mock_tx
+    if (!hasBinary && !hasMockTx) {
+      toast.addToast("warning", t("ipc.error.uploadBinaryOrMockTx"));
       return;
     }
 
@@ -279,13 +342,17 @@ export function IpcPlayground() {
       return;
     }
 
+    // If mock_tx is provided without binary (Mode C), validate script group selection
+    if (hasMockTx && !hasBinary && !selectedScriptGroup) {
+      toast.addToast("warning", t("ipc.error.selectScriptGroup"));
+      return;
+    }
+
     setIsRunning(true);
     setResult(null);
     const startTime = performance.now();
 
     try {
-      const [sgt, hash] = selectedScriptGroup.split(":");
-
       const ipcRequest: IpcRequest = {
         version: 0,
         method_id: methodId,
@@ -293,13 +360,37 @@ export function IpcPlayground() {
         payload: parsedPayload,
       };
 
-      const execResult = await executeIpcCall(
-        mockTxStr,
-        sgt,
-        hash,
-        maxCycles,
-        ipcRequest
-      );
+      let execResult: IpcExecuteResult;
+
+      if (hasBinary && hasMockTx) {
+        // Mode B: binary + mock_tx → execute_script_with_mock_tx
+        execResult = await executeScriptWithMockTx(
+          binaryFile!.data,
+          scriptArgs,
+          ipcRequest,
+          mockTxStr,
+          cellIndex,
+          cellType,
+          scriptGroupType
+        );
+      } else if (hasBinary) {
+        // Mode A: binary only → execute_script
+        execResult = await executeScriptDirect(
+          binaryFile!.data,
+          scriptArgs,
+          ipcRequest
+        );
+      } else {
+        // Mode C: mock_tx only → ipc_call (legacy/demo mode)
+        const [sgt, hash] = selectedScriptGroup.split(":");
+        execResult = await executeIpcCall(
+          mockTxStr,
+          sgt,
+          hash,
+          maxCycles,
+          ipcRequest
+        );
+      }
 
       const duration = performance.now() - startTime;
 
@@ -356,7 +447,7 @@ export function IpcPlayground() {
     } finally {
       setIsRunning(false);
     }
-  }, [mockTxFile, mockTxStr, selectedScriptGroup, ipcPayload, methodId, maxCycles, toast, t]);
+  }, [hasBinary, binaryFile, scriptArgs, ipcPayload, methodId, maxCycles, hasMockTx, mockTxStr, selectedScriptGroup, cellIndex, cellType, scriptGroupType, toast, t]);
 
   // Clear
   const handleClear = useCallback(() => {
@@ -364,7 +455,13 @@ export function IpcPlayground() {
     setResult(null);
   }, []);
 
-  const canRun = isAvailable && !isRunning && mockTxFile !== null && selectedScriptGroup !== "";
+  // Determine current execution mode for display
+  const executionMode = hasBinary && hasMockTx ? "B" : hasBinary ? "A" : hasMockTx ? "C" : null;
+
+  // Can run if: has binary, OR has mock_tx with a script group selected
+  const canRun = isAvailable && !isRunning && (
+    hasBinary || (hasMockTx && selectedScriptGroup !== "")
+  );
 
   return (
     <div className="space-y-6">
@@ -426,71 +523,39 @@ export function IpcPlayground() {
             </div>
           </div>
 
-          {/* Step 1: Load Mock TX */}
+          {/* Step 1: Script Binary */}
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-lg font-medium text-gray-900 mb-2">
-              {t("ipc.step1New")}
+              {t("ipc.step1Binary")}
             </h2>
             <p className="text-xs text-gray-500 mb-4">
-              {t("ipc.mockTxHelpNew")}
+              {t("ipc.binaryHelpNew")}
             </p>
 
-            {/* Fetch from chain */}
-            <TxFetcher
-              onMockTxReady={handleMockTxReady}
+            {/* Binary file upload / fetch from chain */}
+            <BinaryLoader
+              binary={binaryFile}
+              onBinaryReady={setBinaryFile}
+              onClear={() => setBinaryFile(null)}
               disabled={isRunning}
+              prefill={binaryPrefill}
             />
 
-            <div className="relative my-4">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-200" />
-              </div>
-              <div className="relative flex justify-center text-xs">
-                <span className="bg-white px-2 text-gray-400">
-                  {t("fileUpload.orManualUpload")}
-                </span>
-              </div>
+            {/* Script Args */}
+            <div className="mt-4">
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                {t("ipc.scriptArgs")}
+              </label>
+              <input
+                type="text"
+                value={scriptArgs}
+                onChange={(e) => setScriptArgs(e.target.value)}
+                disabled={isRunning}
+                placeholder="0x"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+              />
+              <p className="text-xs text-gray-400 mt-1">{t("ipc.scriptArgsHelp")}</p>
             </div>
-
-            {/* File upload for mock_tx */}
-            <FileUploader
-              label={t("fileUpload.mockTxJson")}
-              accept=".json"
-              helpText={t("fileUpload.mockTxHelp")}
-              file={mockTxFile}
-              onFileChange={setMockTxFile}
-              disabled={isRunning}
-            />
-
-            {/* Script group selector */}
-            {scriptGroups.length > 0 && (
-              <div className="mt-4">
-                <label className="block text-xs font-medium text-gray-500 mb-1">
-                  {t("ipc.scriptGroup")}
-                </label>
-                <select
-                  value={selectedScriptGroup}
-                  onChange={(e) => setSelectedScriptGroup(e.target.value)}
-                  disabled={isRunning}
-                  className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                >
-                  {scriptGroups.map((g) => (
-                    <option
-                      key={`${g.scriptGroupType}:${g.scriptHash}`}
-                      value={`${g.scriptGroupType}:${g.scriptHash}`}
-                    >
-                      {g.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {mockTxFile && scriptGroups.length === 0 && (
-              <p className="text-xs text-yellow-600 mt-2">
-                {t("ipc.noScriptGroups")}
-              </p>
-            )}
           </div>
 
           {/* Step 2: IPC Request */}
@@ -547,6 +612,162 @@ export function IpcPlayground() {
               />
             </div>
           </div>
+
+          {/* Optional: Mock TX Context (Collapsible) */}
+          <div className="bg-white rounded-lg shadow">
+            <button
+              onClick={() => setMockTxExpanded(!mockTxExpanded)}
+              className="w-full p-4 flex items-center justify-between text-left hover:bg-gray-50 rounded-lg transition-colors"
+            >
+              <div className="flex items-center space-x-2">
+                {mockTxExpanded ? (
+                  <ChevronDownIcon className="h-4 w-4 text-gray-500" />
+                ) : (
+                  <ChevronRightIcon className="h-4 w-4 text-gray-500" />
+                )}
+                <h2 className="text-lg font-medium text-gray-900">
+                  {t("ipc.mockTxOptional")}
+                </h2>
+                <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+                  {t("ipc.optional")}
+                </span>
+                {hasMockTx && (
+                  <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                    {t("ipc.mockTxLoaded")}
+                  </span>
+                )}
+              </div>
+            </button>
+
+            {mockTxExpanded && (
+              <div className="px-6 pb-6 space-y-4">
+                <p className="text-xs text-gray-500">
+                  {t("ipc.mockTxHelpOptional")}
+                </p>
+
+                {/* Fetch from chain */}
+                <TxFetcher
+                  onMockTxReady={handleMockTxReady}
+                  disabled={isRunning}
+                />
+
+                <div className="relative my-4">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-gray-200" />
+                  </div>
+                  <div className="relative flex justify-center text-xs">
+                    <span className="bg-white px-2 text-gray-400">
+                      {t("fileUpload.orManualUpload")}
+                    </span>
+                  </div>
+                </div>
+
+                {/* File upload for mock_tx */}
+                <FileUploader
+                  label={t("fileUpload.mockTxJson")}
+                  accept=".json"
+                  helpText={t("fileUpload.mockTxHelp")}
+                  file={mockTxFile}
+                  onFileChange={setMockTxFile}
+                  disabled={isRunning}
+                />
+
+                {/* Mock TX params: cell_index, cell_type, script_group_type */}
+                {hasMockTx && (
+                  <div className="space-y-3 pt-2 border-t border-gray-100">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">
+                          {t("params.cellIndex")}
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={cellIndex}
+                          onChange={(e) => setCellIndex(parseInt(e.target.value, 10) || 0)}
+                          disabled={isRunning}
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">
+                          {t("params.cellType")}
+                        </label>
+                        <select
+                          value={cellType}
+                          onChange={(e) => setCellType(e.target.value)}
+                          disabled={isRunning}
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                        >
+                          <option value="input">input</option>
+                          <option value="output">output</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">
+                          {t("params.scriptGroupType")}
+                        </label>
+                        <select
+                          value={scriptGroupType}
+                          onChange={(e) => setScriptGroupType(e.target.value)}
+                          disabled={isRunning}
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                        >
+                          <option value="lock">lock</option>
+                          <option value="type">type</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Script group selector (auto-detected) */}
+                    {scriptGroups.length > 0 && (
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">
+                          {t("ipc.scriptGroup")} ({t("ipc.autoDetected")})
+                        </label>
+                        <select
+                          value={selectedScriptGroup}
+                          onChange={(e) => handleScriptGroupChange(e.target.value)}
+                          disabled={isRunning}
+                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                        >
+                          {scriptGroups.map((g) => (
+                            <option
+                              key={`${g.scriptGroupType}:${g.scriptHash}`}
+                              value={`${g.scriptGroupType}:${g.scriptHash}`}
+                            >
+                              {g.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {mockTxFile && scriptGroups.length === 0 && (
+                      <p className="text-xs text-yellow-600">
+                        {t("ipc.noScriptGroups")}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Execution mode indicator */}
+          {executionMode && (
+            <div className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2 border border-gray-200">
+              {executionMode === "A" && (
+                <span>🔧 <strong>Mode A</strong>: {t("ipc.modeA")}</span>
+              )}
+              {executionMode === "B" && (
+                <span>🔄 <strong>Mode B</strong>: {t("ipc.modeB")} (cell_index={cellIndex}, {cellType}, {scriptGroupType})</span>
+              )}
+              {executionMode === "C" && (
+                <span>📋 <strong>Mode C</strong>: {t("ipc.modeC")}</span>
+              )}
+            </div>
+          )}
 
           {/* Execute / Clear buttons */}
           <div className="flex space-x-3">

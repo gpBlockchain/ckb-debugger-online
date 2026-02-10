@@ -3,6 +3,8 @@
 export const memory: WebAssembly.Memory;
 export const run_json: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
 export const ipc_call: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number];
+export const execute_script: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+export const execute_script_with_mock_tx: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => [number, number];
 export const __internal_syscall: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
 export const rustsecp256k1_v0_10_0_context_create: (a: number) => number;
 export const rustsecp256k1_v0_10_0_context_destroy: (a: number) => void;

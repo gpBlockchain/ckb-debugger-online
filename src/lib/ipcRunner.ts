@@ -101,6 +101,84 @@ export async function executeIpcCall(
 }
 
 /**
+ * Execute a script binary directly with an IPC request (no mock_tx required).
+ * A minimal mock transaction is created internally to host the binary.
+ *
+ * @param binary - The compiled CKB RISC-V script binary
+ * @param args - Hex-encoded script args (with or without 0x prefix)
+ * @param ipcRequest - IPC request object
+ * @returns The IPC response
+ */
+export async function executeScriptDirect(
+  binary: Uint8Array,
+  args: string,
+  ipcRequest: IpcRequest
+): Promise<IpcExecuteResult> {
+  await initializeIpcRunner();
+
+  const { execute_script } = await import("./ckb-debugger-wasm/ckb_debugger");
+
+  const ipcRequestJson = JSON.stringify(ipcRequest);
+  const rawResponse = execute_script(binary, args, ipcRequestJson);
+
+  let response: IpcResponse;
+  try {
+    response = JSON.parse(rawResponse) as IpcResponse;
+  } catch {
+    response = { error: rawResponse };
+  }
+
+  return { rawResponse, response };
+}
+
+/**
+ * Execute a script binary with an IPC request, using a mock_tx for full transaction context.
+ * The binary replaces the script at the specified cell position in the mock_tx.
+ *
+ * @param binary - The compiled CKB RISC-V script binary
+ * @param args - Hex-encoded script args (with or without 0x prefix, empty string for no override)
+ * @param ipcRequest - IPC request object
+ * @param mockTxJson - JSON string of a mock transaction (ReprMockTransaction)
+ * @param cellIndex - Index of the cell containing the target script
+ * @param cellType - "input" or "output"
+ * @param scriptGroupType - "lock" or "type"
+ * @returns The IPC response
+ */
+export async function executeScriptWithMockTx(
+  binary: Uint8Array,
+  args: string,
+  ipcRequest: IpcRequest,
+  mockTxJson: string,
+  cellIndex: number,
+  cellType: string,
+  scriptGroupType: string
+): Promise<IpcExecuteResult> {
+  await initializeIpcRunner();
+
+  const { execute_script_with_mock_tx } = await import("./ckb-debugger-wasm/ckb_debugger");
+
+  const ipcRequestJson = JSON.stringify(ipcRequest);
+  const rawResponse = execute_script_with_mock_tx(
+    binary,
+    args,
+    ipcRequestJson,
+    mockTxJson,
+    cellIndex,
+    cellType,
+    scriptGroupType
+  );
+
+  let response: IpcResponse;
+  try {
+    response = JSON.parse(rawResponse) as IpcResponse;
+  } catch {
+    response = { error: rawResponse };
+  }
+
+  return { rawResponse, response };
+}
+
+/**
  * Convert hex string to Uint8Array
  */
 export function hexToBytes(hex: string): Uint8Array {
