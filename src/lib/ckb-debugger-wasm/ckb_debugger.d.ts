@@ -1,12 +1,27 @@
 /* tslint:disable */
 /* eslint-disable */
 export function run_json(mock_tx: string, script_group_type: string, script_hash: string, max_cycle: string): string;
+/**
+ * Perform an IPC call to a CKB script.
+ *
+ * # Arguments
+ * * `mock_tx` - JSON string of a mock transaction (ReprMockTransaction)
+ * * `script_group_type` - "lock" or "type"
+ * * `script_hash` - hex-encoded script hash
+ * * `max_cycle` - maximum cycles allowed
+ * * `ipc_request` - JSON string of an IPC request with fields: version, method_id, payload_format, payload
+ *
+ * # Returns
+ * JSON string of the IPC response with fields: version, error_code, payload_format, payload
+ */
+export function ipc_call(mock_tx: string, script_group_type: string, script_hash: string, max_cycle: string, ipc_request: string): string;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
   readonly run_json: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number];
+  readonly ipc_call: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number];
   readonly __internal_syscall: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
   readonly rustsecp256k1_v0_10_0_context_create: (a: number) => number;
   readonly rustsecp256k1_v0_10_0_context_destroy: (a: number) => void;

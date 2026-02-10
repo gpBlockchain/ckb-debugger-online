@@ -4,33 +4,18 @@ import {
   ArrowPathIcon,
   ExclamationTriangleIcon,
   BeakerIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
 } from "@heroicons/react/24/solid";
-import { BinaryLoader, type LoadedBinary } from "./BinaryLoader";
 import { OutputConsole } from "./OutputConsole";
 import {
   checkIpcRunnerAvailability,
-  executeScript,
-  executeScriptWithMockTx,
-  hexToBytes,
-  type IpcExecuteResult,
+  executeIpcCall,
+  type IpcRequest,
 } from "../lib/ipcRunner";
-import type { NetworkType } from "../lib/txConverter";
 import type { DebuggerResult } from "../lib/wasmer";
 import { useToast } from "./Toast";
 import { useI18n } from "../lib/i18n";
 import { blake2b } from "blakejs";
-import { TxFetcher, type UploadedFile } from "./index";
-
-// Demo example configuration
-const DEMO_CONFIG = {
-  network: "testnet" as NetworkType,
-  txHash: "0xd9f0427fd961edfab00d1e37cec34ec301eed54e7099628c7b59bff003a8956a",
-  outputIndex: "0",
-  args: "server_entry",
-  jsonRequest: '{"TestPrimitiveTypes":{"arg1":1,"arg2":2,"arg3":3,"arg4":4,"arg5":5,"arg6":6,"arg7":7,"arg8":8,"arg9":9,"arg10":10,"arg11":true}}',
-};
+import { TxFetcher, FileUploader, type UploadedFile } from "./index";
 
 // ---------------------------------------------------------------------------
 // Script hash helpers (compute blake2b-256 with CKB personalization)
@@ -40,6 +25,16 @@ const CKB_HASH_PERSONALIZATION = new Uint8Array([
   99, 107, 98, 45, 100, 101, 102, 97, 117, 108, 116, 45, 104, 97, 115, 104,
 ]); // "ckb-default-hash"
 
+function hexToBytes(hex: string): Uint8Array {
+  const clean = hex.startsWith("0x") ? hex.slice(2) : hex;
+  if (clean.length === 0) return new Uint8Array(0);
+  const bytes = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
+}
+
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))
@@ -47,7 +42,6 @@ function bytesToHex(bytes: Uint8Array): string {
 }
 
 // CKB hash_type encoding: data=0x00, type=0x01, data1=0x02, data2=0x04
-// See: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0032-ckb-vm-version-selection/0032-ckb-vm-version-selection.md
 function hashTypeToNum(ht: string): number {
   switch (ht) {
     case "data": return 0;
@@ -182,41 +176,35 @@ export function IpcPlayground() {
   const [initError, setInitError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
 
-  // Binary state
-  const [binary, setBinary] = useState<LoadedBinary | null>(null);
-
-  // Args and request
-  const [args, setArgs] = useState("server_entry");
-  const [jsonRequest, setJsonRequest] = useState("");
-
-  // Mock TX state
-  const [mockTxEnabled, setMockTxEnabled] = useState(false);
+  // Mock TX state (required for ipc_call)
   const [mockTxFile, setMockTxFile] = useState<UploadedFile | null>(null);
-  const [showMockTxSection, setShowMockTxSection] = useState(false);
   const [selectedScriptGroup, setSelectedScriptGroup] = useState<string>("");
+
+  // IPC Request fields
+  const [ipcPayload, setIpcPayload] = useState("");
+  const [methodId, setMethodId] = useState(0);
+  const [maxCycles, setMaxCycles] = useState("70000000");
 
   // Execution state
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<DebuggerResult | null>(null);
 
-  // Prefill state for BinaryLoader (used by "Load Demo")
-  const [binaryPrefill, setBinaryPrefill] = useState<{
-    network: NetworkType;
-    txHash: string;
-    outputIndex: string;
-  } | null>(null);
+  // Get mock_tx as string
+  const mockTxStr = useMemo(() => {
+    if (!mockTxFile) return "";
+    try {
+      const decoder = new TextDecoder();
+      return decoder.decode(mockTxFile.content);
+    } catch {
+      return "";
+    }
+  }, [mockTxFile]);
 
   // Detect script groups from mock_tx
   const scriptGroups = useMemo<ScriptGroupOption[]>(() => {
-    if (!mockTxFile) return [];
-    try {
-      const decoder = new TextDecoder();
-      const str = decoder.decode(mockTxFile.content);
-      return extractScriptGroups(str);
-    } catch {
-      return [];
-    }
-  }, [mockTxFile]);
+    if (!mockTxStr) return [];
+    return extractScriptGroups(mockTxStr);
+  }, [mockTxStr]);
 
   // Auto-select first script group
   useEffect(() => {
@@ -227,20 +215,13 @@ export function IpcPlayground() {
 
   // Load demo example
   const handleLoadDemo = useCallback(() => {
-    setBinary(null);
-    setArgs(DEMO_CONFIG.args);
-    setJsonRequest(DEMO_CONFIG.jsonRequest);
-    setResult(null);
-    setMockTxEnabled(false);
     setMockTxFile(null);
     setSelectedScriptGroup("");
-    // Trigger prefill with a new object reference so useEffect fires
-    setBinaryPrefill({
-      network: DEMO_CONFIG.network,
-      txHash: DEMO_CONFIG.txHash,
-      outputIndex: DEMO_CONFIG.outputIndex,
-    });
-    toast.addToast("success", t("ipc.demoLoaded"));
+    setMethodId(0);
+    setIpcPayload('{"TestPrimitiveTypes":{"arg1":1,"arg2":2,"arg3":3,"arg4":4,"arg5":5,"arg6":6,"arg7":7,"arg8":8,"arg9":9,"arg10":10,"arg11":true}}');
+    setMaxCycles("70000000");
+    setResult(null);
+    toast.addToast("info", t("ipc.demoLoadedNew"));
   }, [toast, t]);
 
   // Initialize WASM
@@ -273,30 +254,36 @@ export function IpcPlayground() {
     setIsInitializing(false);
   }, []);
 
-  // Handle mock tx file upload
-  const handleMockTxFileChange = useCallback((file: UploadedFile | null) => {
-    setMockTxFile(file);
-    setSelectedScriptGroup("");
-  }, []);
-
   // Handle TxFetcher mock tx ready
   const handleMockTxReady = useCallback((file: UploadedFile) => {
     setMockTxFile(file);
     setSelectedScriptGroup("");
-    setMockTxEnabled(true);
-    setShowMockTxSection(true);
     toast.addToast("success", t("success.mockTxGenerated"));
   }, [toast, t]);
 
-  // Execute
+  // Execute IPC call
   const handleExecute = useCallback(async () => {
-    if (!binary) {
-      toast.addToast("warning", t("ipc.error.loadBinary"));
+    if (!mockTxFile || !mockTxStr) {
+      toast.addToast("warning", t("ipc.error.loadMockTx"));
       return;
     }
 
-    if (!jsonRequest.trim()) {
+    if (!selectedScriptGroup) {
+      toast.addToast("warning", t("ipc.error.selectScriptGroup"));
+      return;
+    }
+
+    if (!ipcPayload.trim()) {
       toast.addToast("warning", t("ipc.error.enterRequest"));
+      return;
+    }
+
+    // Validate JSON payload
+    let parsedPayload: unknown;
+    try {
+      parsedPayload = JSON.parse(ipcPayload);
+    } catch {
+      toast.addToast("warning", t("ipc.error.invalidJson"));
       return;
     }
 
@@ -305,66 +292,61 @@ export function IpcPlayground() {
     const startTime = performance.now();
 
     try {
-      let execResult: IpcExecuteResult;
+      const [sgt, hash] = selectedScriptGroup.split(":");
 
-      if (mockTxEnabled && mockTxFile && selectedScriptGroup) {
-        // Execute with mock_tx context
-        const [sgt, hash] = selectedScriptGroup.split(":");
-        const decoder = new TextDecoder();
-        const mockTxStr = decoder.decode(mockTxFile.content);
+      const ipcRequest: IpcRequest = {
+        version: 0,
+        method_id: methodId,
+        payload_format: "json",
+        payload: parsedPayload,
+      };
 
-        execResult = await executeScriptWithMockTx(
-          binary.data,
-          args,
-          jsonRequest,
-          mockTxStr,
-          sgt,
-          hash
-        );
-      } else {
-        // Execute without mock_tx (original behavior)
-        execResult = await executeScript(
-          binary.data,
-          args,
-          jsonRequest
-        );
-      }
+      const execResult = await executeIpcCall(
+        mockTxStr,
+        sgt,
+        hash,
+        maxCycles,
+        ipcRequest
+      );
 
       const duration = performance.now() - startTime;
 
       // Format output
-      let formattedJson: string;
+      let formattedResponse: string;
       try {
-        formattedJson = JSON.stringify(JSON.parse(execResult.jsonResponse), null, 2);
+        formattedResponse = JSON.stringify(execResult.response, null, 2);
       } catch {
-        formattedJson = execResult.jsonResponse;
+        formattedResponse = execResult.rawResponse;
       }
+
+      const hasError = execResult.response.error !== undefined;
 
       let stdout = "";
-      stdout += `✓ ${t("ipc.executionSuccess")}\n`;
-      if (mockTxEnabled && mockTxFile) {
-        stdout += `[Mock TX: ${t("ipc.mockTxEnabled")}]\n`;
+      if (hasError) {
+        stdout += `✗ ${t("ipc.executionError")}\n\n`;
+        stdout += `${t("ipc.error.detail")}: ${execResult.response.error}\n`;
+      } else {
+        stdout += `✓ ${t("ipc.executionSuccess")}\n\n`;
+        stdout += `${t("ipc.jsonResponse")}:\n${formattedResponse}\n\n`;
       }
-      stdout += `\n${t("ipc.jsonResponse")}:\n${formattedJson}\n\n`;
-      stdout += `${t("ipc.cyclesUsed")}: ${execResult.cycles.toLocaleString()}\n`;
       stdout += `${t("ipc.executionTime")}: ${(duration / 1000).toFixed(2)}s`;
-
-      if (execResult.debugMessages.length > 0) {
-        stdout += `\n\n${t("ipc.debugOutput")}:\n${execResult.debugMessages.join("\n")}`;
-      }
 
       setResult({
         stdout,
-        stderr: "",
-        exitCode: 0,
-        success: true,
+        stderr: hasError ? String(execResult.response.error) : "",
+        exitCode: hasError ? 1 : 0,
+        success: !hasError,
         duration,
       });
 
-      toast.addToast(
-        "success",
-        `${t("success.executionSuccess")} (${(duration / 1000).toFixed(2)}s)`
-      );
+      if (hasError) {
+        toast.addToast("error", `${t("error.executionError")}: ${execResult.response.error}`);
+      } else {
+        toast.addToast(
+          "success",
+          `${t("success.executionSuccess")} (${(duration / 1000).toFixed(2)}s)`
+        );
+      }
     } catch (error) {
       const duration = performance.now() - startTime;
       const errorMessage =
@@ -382,15 +364,15 @@ export function IpcPlayground() {
     } finally {
       setIsRunning(false);
     }
-  }, [binary, args, jsonRequest, mockTxEnabled, mockTxFile, selectedScriptGroup, toast, t]);
+  }, [mockTxFile, mockTxStr, selectedScriptGroup, ipcPayload, methodId, maxCycles, toast, t]);
 
   // Clear
   const handleClear = useCallback(() => {
-    setJsonRequest("");
+    setIpcPayload("");
     setResult(null);
   }, []);
 
-  const canRun = isAvailable && !isRunning && binary !== null;
+  const canRun = isAvailable && !isRunning && mockTxFile !== null && selectedScriptGroup !== "";
 
   return (
     <div className="space-y-6">
@@ -406,7 +388,7 @@ export function IpcPlayground() {
             <p className="text-sm text-yellow-700 mt-2">
               {t("ipc.runBuildScript")}{" "}
               <code className="bg-yellow-100 px-1 rounded">
-                ./scripts/build-vm-wasm.sh
+                ./scripts/build-wasm.sh
               </code>
             </p>
             <button
@@ -428,7 +410,7 @@ export function IpcPlayground() {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-medium text-blue-800">{t("ipc.demoTitle")}</h3>
-                <p className="text-xs text-blue-600 mt-1">{t("ipc.demoDescription")}</p>
+                <p className="text-xs text-blue-600 mt-1">{t("ipc.demoDescriptionNew")}</p>
                 <p className="text-xs text-blue-600 mt-1">
                   {t("ipc.demoSourceCode")}:{" "}
                   <a
@@ -452,191 +434,126 @@ export function IpcPlayground() {
             </div>
           </div>
 
-          {/* Binary loader */}
+          {/* Step 1: Load Mock TX */}
           <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">
-              {t("ipc.step1")}
+            <h2 className="text-lg font-medium text-gray-900 mb-2">
+              {t("ipc.step1New")}
             </h2>
-            <BinaryLoader
-              onBinaryReady={setBinary}
-              binary={binary}
-              onClear={() => setBinary(null)}
-              disabled={isRunning}
-              prefill={binaryPrefill}
-            />
-          </div>
-
-          {/* Server arguments */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">
-              {t("ipc.step2")}
-            </h2>
-            <p className="text-xs text-gray-500 mb-2">
-              {t("ipc.argsHelp")}
+            <p className="text-xs text-gray-500 mb-4">
+              {t("ipc.mockTxHelpNew")}
             </p>
-            <input
-              type="text"
-              value={args}
-              onChange={(e) => setArgs(e.target.value)}
+
+            {/* Fetch from chain */}
+            <TxFetcher
+              onMockTxReady={handleMockTxReady}
               disabled={isRunning}
-              placeholder="server_entry"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
             />
-          </div>
 
-          {/* JSON request */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">
-              {t("ipc.step3")}
-            </h2>
-            <p className="text-xs text-gray-500 mb-2">
-              {t("ipc.requestHelp")}
-            </p>
-            <textarea
-              value={jsonRequest}
-              onChange={(e) => setJsonRequest(e.target.value)}
+            <div className="relative my-4">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-200" />
+              </div>
+              <div className="relative flex justify-center text-xs">
+                <span className="bg-white px-2 text-gray-400">
+                  {t("fileUpload.orManualUpload")}
+                </span>
+              </div>
+            </div>
+
+            {/* File upload for mock_tx */}
+            <FileUploader
+              label={t("fileUpload.mockTxJson")}
+              accept=".json"
+              helpText={t("fileUpload.mockTxHelp")}
+              file={mockTxFile}
+              onFileChange={setMockTxFile}
               disabled={isRunning}
-              rows={6}
-              placeholder='{"TestPrimitiveTypes":{"arg1":1,"arg2":2,"arg3":3}}'
-              spellCheck={false}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 resize-y"
             />
-          </div>
 
-          {/* Mock TX (optional) */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <button
-              type="button"
-              onClick={() => setShowMockTxSection(!showMockTxSection)}
-              className="w-full flex items-center justify-between text-left"
-              disabled={isRunning}
-            >
-              <h2 className="text-lg font-medium text-gray-900">
-                {t("ipc.step4")}
-              </h2>
-              {showMockTxSection ? (
-                <ChevronUpIcon className="h-5 w-5 text-gray-400" />
-              ) : (
-                <ChevronDownIcon className="h-5 w-5 text-gray-400" />
-              )}
-            </button>
-
-            {showMockTxSection && (
-              <div className="mt-4 space-y-4">
-                <p className="text-xs text-gray-500">
-                  {t("ipc.mockTxHelp")}
-                </p>
-
-                {/* Enable toggle */}
-                <label className="flex items-center space-x-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={mockTxEnabled}
-                    onChange={(e) => setMockTxEnabled(e.target.checked)}
-                    disabled={isRunning}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <span className="text-sm text-gray-700">
-                    {t("ipc.enableMockTx")}
-                  </span>
+            {/* Script group selector */}
+            {scriptGroups.length > 0 && (
+              <div className="mt-4">
+                <label className="block text-xs font-medium text-gray-500 mb-1">
+                  {t("ipc.scriptGroup")}
                 </label>
-
-                {mockTxEnabled && (
-                  <div className="space-y-4 pl-6 border-l-2 border-blue-200">
-                    {/* Fetch from chain */}
-                    <TxFetcher
-                      onMockTxReady={handleMockTxReady}
-                      disabled={isRunning}
-                    />
-
-                    <div className="relative">
-                      <div className="absolute inset-0 flex items-center">
-                        <div className="w-full border-t border-gray-200" />
-                      </div>
-                      <div className="relative flex justify-center text-xs">
-                        <span className="bg-white px-2 text-gray-400">
-                          {t("fileUpload.orManualUpload")}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* File upload for mock_tx */}
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">
-                        {t("fileUpload.mockTxJson")}
-                      </label>
-                      {mockTxFile ? (
-                        <div className="flex items-center justify-between p-2 bg-gray-50 border border-gray-200 rounded text-xs">
-                          <span className="font-medium text-gray-700 truncate">
-                            {mockTxFile.name} ({(mockTxFile.content.length / 1024).toFixed(1)} KB)
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleMockTxFileChange(null)}
-                            disabled={isRunning}
-                            className="ml-2 text-gray-400 hover:text-red-500 text-xs"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ) : (
-                        <input
-                          type="file"
-                          accept=".json"
-                          disabled={isRunning}
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              const reader = new FileReader();
-                              reader.onload = () => {
-                                const content = new Uint8Array(reader.result as ArrayBuffer);
-                                handleMockTxFileChange({
-                                  name: file.name,
-                                  content,
-                                  size: content.length,
-                                });
-                              };
-                              reader.readAsArrayBuffer(file);
-                            }
-                          }}
-                          className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                        />
-                      )}
-                    </div>
-
-                    {/* Script group selector */}
-                    {scriptGroups.length > 0 && (
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">
-                          {t("ipc.scriptGroup")}
-                        </label>
-                        <select
-                          value={selectedScriptGroup}
-                          onChange={(e) => setSelectedScriptGroup(e.target.value)}
-                          disabled={isRunning}
-                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-                        >
-                          {scriptGroups.map((g) => (
-                            <option
-                              key={`${g.scriptGroupType}:${g.scriptHash}`}
-                              value={`${g.scriptGroupType}:${g.scriptHash}`}
-                            >
-                              {g.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    {mockTxFile && scriptGroups.length === 0 && (
-                      <p className="text-xs text-yellow-600">
-                        {t("ipc.noScriptGroups")}
-                      </p>
-                    )}
-                  </div>
-                )}
+                <select
+                  value={selectedScriptGroup}
+                  onChange={(e) => setSelectedScriptGroup(e.target.value)}
+                  disabled={isRunning}
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                >
+                  {scriptGroups.map((g) => (
+                    <option
+                      key={`${g.scriptGroupType}:${g.scriptHash}`}
+                      value={`${g.scriptGroupType}:${g.scriptHash}`}
+                    >
+                      {g.label}
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
+
+            {mockTxFile && scriptGroups.length === 0 && (
+              <p className="text-xs text-yellow-600 mt-2">
+                {t("ipc.noScriptGroups")}
+              </p>
+            )}
+          </div>
+
+          {/* Step 2: IPC Request */}
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-lg font-medium text-gray-900 mb-2">
+              {t("ipc.step2New")}
+            </h2>
+            <p className="text-xs text-gray-500 mb-4">
+              {t("ipc.requestHelpNew")}
+            </p>
+
+            {/* Method ID */}
+            <div className="mb-3">
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                method_id
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={methodId}
+                onChange={(e) => setMethodId(parseInt(e.target.value, 10) || 0)}
+                disabled={isRunning}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+              />
+            </div>
+
+            {/* Payload */}
+            <div className="mb-3">
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                payload (JSON)
+              </label>
+              <textarea
+                value={ipcPayload}
+                onChange={(e) => setIpcPayload(e.target.value)}
+                disabled={isRunning}
+                rows={6}
+                placeholder='{"TestPrimitiveTypes":{"arg1":1,"arg2":2,"arg3":3}}'
+                spellCheck={false}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 resize-y"
+              />
+            </div>
+
+            {/* Max Cycles */}
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                {t("params.maxCycles")}
+              </label>
+              <input
+                type="text"
+                value={maxCycles}
+                onChange={(e) => setMaxCycles(e.target.value)}
+                disabled={isRunning}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+              />
+            </div>
           </div>
 
           {/* Execute / Clear buttons */}

@@ -101,6 +101,48 @@ export function run_json(mock_tx, script_group_type, script_hash, max_cycle) {
     }
 }
 
+/**
+ * Perform an IPC call to a CKB script.
+ *
+ * # Arguments
+ * * `mock_tx` - JSON string of a mock transaction (ReprMockTransaction)
+ * * `script_group_type` - "lock" or "type"
+ * * `script_hash` - hex-encoded script hash
+ * * `max_cycle` - maximum cycles allowed
+ * * `ipc_request` - JSON string of an IPC request with fields: version, method_id, payload_format, payload
+ *
+ * # Returns
+ * JSON string of the IPC response with fields: version, error_code, payload_format, payload
+ * @param {string} mock_tx
+ * @param {string} script_group_type
+ * @param {string} script_hash
+ * @param {string} max_cycle
+ * @param {string} ipc_request
+ * @returns {string}
+ */
+export function ipc_call(mock_tx, script_group_type, script_hash, max_cycle, ipc_request) {
+    let deferred6_0;
+    let deferred6_1;
+    try {
+        const ptr0 = passStringToWasm0(mock_tx, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(script_group_type, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(script_hash, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(max_cycle, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passStringToWasm0(ipc_request, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len4 = WASM_VECTOR_LEN;
+        const ret = wasm.ipc_call(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4);
+        deferred6_0 = ret[0];
+        deferred6_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred6_0, deferred6_1, 1);
+    }
+}
+
 async function __wbg_load(module, imports) {
     if (typeof Response === 'function' && module instanceof Response) {
         if (typeof WebAssembly.instantiateStreaming === 'function') {
