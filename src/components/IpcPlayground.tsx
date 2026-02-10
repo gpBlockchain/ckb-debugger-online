@@ -6,16 +6,24 @@ import {
   BeakerIcon,
 } from "@heroicons/react/24/solid";
 import { BinaryLoader, type LoadedBinary } from "./BinaryLoader";
+import { FileUploader, type UploadedFile } from "./FileUploader";
+import { MockTxParamsEditor, type MockTxParams } from "./ParamsEditor";
 import { OutputConsole } from "./OutputConsole";
 import {
   checkIpcRunnerAvailability,
   executeScript,
   type IpcExecuteResult,
 } from "../lib/ipcRunner";
+import {
+  initializeWasmer,
+  runMockTxMode,
+} from "../lib/wasmer";
 import type { NetworkType } from "../lib/txConverter";
 import type { DebuggerResult } from "../lib/wasmer";
 import { useToast } from "./Toast";
 import { useI18n } from "../lib/i18n";
+
+type IpcExecMode = "binary" | "mockTx";
 
 // Demo example configuration
 const DEMO_CONFIG = {
@@ -35,8 +43,20 @@ export function IpcPlayground() {
   const [initError, setInitError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
 
+  // Execution mode
+  const [ipcExecMode, setIpcExecMode] = useState<IpcExecMode>("binary");
+
   // Binary state
   const [binary, setBinary] = useState<LoadedBinary | null>(null);
+
+  // Mock TX state
+  const [mockTxFile, setMockTxFile] = useState<UploadedFile | null>(null);
+  const [mockTxParams, setMockTxParams] = useState<MockTxParams>({
+    cellIndex: 0,
+    cellType: "input",
+    scriptGroupType: "lock",
+    maxCycles: 3500000000,
+  });
 
   // Args and request
   const [args, setArgs] = useState("server_entry");
@@ -73,7 +93,10 @@ export function IpcPlayground() {
     let cancelled = false;
     (async () => {
       setIsInitializing(true);
+      // Initialize both WASM modules - IPC runner and debugger
       const avail = await checkIpcRunnerAvailability();
+      // Also try to init debugger WASM for mock_tx mode
+      try { await initializeWasmer(); } catch { /* ok if not available */ }
       if (cancelled) return;
       setIsAvailable(avail.available);
       setInitError(avail.available ? null : (avail.error || null));
@@ -93,6 +116,7 @@ export function IpcPlayground() {
     setIsInitializing(true);
     setInitError(null);
     const avail = await checkIpcRunnerAvailability();
+    try { await initializeWasmer(); } catch { /* ok */ }
     setIsAvailable(avail.available);
     setInitError(avail.available ? null : (avail.error || null));
     setIsInitializing(false);
@@ -172,13 +196,62 @@ export function IpcPlayground() {
     }
   }, [binary, args, jsonRequest, toast, t]);
 
+  // Execute Mock TX
+  const handleExecuteMockTx = useCallback(async () => {
+    if (!mockTxFile) {
+      toast.addToast("warning", t("ipc.error.uploadMockTx"));
+      return;
+    }
+
+    setIsRunning(true);
+    setResult(null);
+
+    try {
+      const debugResult = await runMockTxMode({
+        mockTx: mockTxFile.content,
+        cellIndex: mockTxParams.cellIndex,
+        cellType: mockTxParams.cellType,
+        scriptGroupType: mockTxParams.scriptGroupType,
+        maxCycles: mockTxParams.maxCycles,
+      });
+
+      setResult(debugResult);
+
+      if (debugResult.success) {
+        toast.addToast(
+          "success",
+          `${t("success.executionSuccess")} (${(debugResult.duration / 1000).toFixed(2)}s)`
+        );
+      } else {
+        toast.addToast("error", `${t("error.executionFailed")}: ${debugResult.exitCode}`);
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      setResult({
+        stdout: "",
+        stderr: `${t("ipc.executionError")}: ${errorMessage}`,
+        exitCode: 1,
+        success: false,
+        duration: 0,
+      });
+
+      toast.addToast("error", `${t("error.executionError")}: ${errorMessage}`);
+    } finally {
+      setIsRunning(false);
+    }
+  }, [mockTxFile, mockTxParams, toast, t]);
+
   // Clear
   const handleClear = useCallback(() => {
     setJsonRequest("");
     setResult(null);
   }, []);
 
-  const canRun = isAvailable && !isRunning && binary !== null;
+  const canRun = ipcExecMode === "binary"
+    ? isAvailable && !isRunning && binary !== null
+    : !isRunning && mockTxFile !== null;
 
   return (
     <div className="space-y-6">
@@ -211,90 +284,149 @@ export function IpcPlayground() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Configuration */}
         <div className="space-y-6">
-          {/* Demo button */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-medium text-blue-800">{t("ipc.demoTitle")}</h3>
-                <p className="text-xs text-blue-600 mt-1">{t("ipc.demoDescription")}</p>
-                <p className="text-xs text-blue-600 mt-1">
-                  {t("ipc.demoSourceCode")}:{" "}
-                  <a
-                    href="https://github.com/XuJiandong/ckb-script-ipc/blob/main/contracts/unit-tests/src/server_entry.rs"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline hover:text-blue-800"
+          {/* Execution mode toggle */}
+          <div className="flex bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setIpcExecMode("binary")}
+              className={`
+                flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors
+                ${ipcExecMode === "binary"
+                  ? "bg-white text-blue-700 shadow-sm"
+                  : "text-gray-600 hover:text-gray-900"}
+              `}
+            >
+              {t("ipc.modeBinary")}
+            </button>
+            <button
+              onClick={() => setIpcExecMode("mockTx")}
+              className={`
+                flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors
+                ${ipcExecMode === "mockTx"
+                  ? "bg-white text-blue-700 shadow-sm"
+                  : "text-gray-600 hover:text-gray-900"}
+              `}
+            >
+              {t("ipc.modeMockTx")}
+            </button>
+          </div>
+
+          {ipcExecMode === "binary" ? (
+            <>
+              {/* Demo button */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-medium text-blue-800">{t("ipc.demoTitle")}</h3>
+                    <p className="text-xs text-blue-600 mt-1">{t("ipc.demoDescription")}</p>
+                    <p className="text-xs text-blue-600 mt-1">
+                      {t("ipc.demoSourceCode")}:{" "}
+                      <a
+                        href="https://github.com/XuJiandong/ckb-script-ipc/blob/main/contracts/unit-tests/src/server_entry.rs"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline hover:text-blue-800"
+                      >
+                        server_entry.rs
+                      </a>
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleLoadDemo}
+                    disabled={isRunning}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors"
                   >
-                    server_entry.rs
-                  </a>
-                </p>
+                    <BeakerIcon className="h-4 w-4" />
+                    <span>{t("ipc.loadDemo")}</span>
+                  </button>
+                </div>
               </div>
-              <button
-                onClick={handleLoadDemo}
-                disabled={isRunning}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors"
-              >
-                <BeakerIcon className="h-4 w-4" />
-                <span>{t("ipc.loadDemo")}</span>
-              </button>
-            </div>
-          </div>
 
-          {/* Binary loader */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">
-              {t("ipc.step1")}
-            </h2>
-            <BinaryLoader
-              onBinaryReady={setBinary}
-              binary={binary}
-              onClear={() => setBinary(null)}
-              disabled={isRunning}
-              prefill={binaryPrefill}
-            />
-          </div>
+              {/* Binary loader */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-lg font-medium text-gray-900 mb-4">
+                  {t("ipc.step1")}
+                </h2>
+                <BinaryLoader
+                  onBinaryReady={setBinary}
+                  binary={binary}
+                  onClear={() => setBinary(null)}
+                  disabled={isRunning}
+                  prefill={binaryPrefill}
+                />
+              </div>
 
-          {/* Server arguments */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">
-              {t("ipc.step2")}
-            </h2>
-            <p className="text-xs text-gray-500 mb-2">
-              {t("ipc.argsHelp")}
-            </p>
-            <input
-              type="text"
-              value={args}
-              onChange={(e) => setArgs(e.target.value)}
-              disabled={isRunning}
-              placeholder="server_entry"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
-            />
-          </div>
+              {/* Server arguments */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-lg font-medium text-gray-900 mb-4">
+                  {t("ipc.step2")}
+                </h2>
+                <p className="text-xs text-gray-500 mb-2">
+                  {t("ipc.argsHelp")}
+                </p>
+                <input
+                  type="text"
+                  value={args}
+                  onChange={(e) => setArgs(e.target.value)}
+                  disabled={isRunning}
+                  placeholder="server_entry"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                />
+              </div>
 
-          {/* JSON request */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">
-              {t("ipc.step3")}
-            </h2>
-            <p className="text-xs text-gray-500 mb-2">
-              {t("ipc.requestHelp")}
-            </p>
-            <textarea
-              value={jsonRequest}
-              onChange={(e) => setJsonRequest(e.target.value)}
-              disabled={isRunning}
-              rows={6}
-              placeholder='{"TestPrimitiveTypes":{"arg1":1,"arg2":2,"arg3":3}}'
-              spellCheck={false}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 resize-y"
-            />
-          </div>
+              {/* JSON request */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-lg font-medium text-gray-900 mb-4">
+                  {t("ipc.step3")}
+                </h2>
+                <p className="text-xs text-gray-500 mb-2">
+                  {t("ipc.requestHelp")}
+                </p>
+                <textarea
+                  value={jsonRequest}
+                  onChange={(e) => setJsonRequest(e.target.value)}
+                  disabled={isRunning}
+                  rows={6}
+                  placeholder='{"TestPrimitiveTypes":{"arg1":1,"arg2":2,"arg3":3}}'
+                  spellCheck={false}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 resize-y"
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Mock TX file upload */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-lg font-medium text-gray-900 mb-4">
+                  {t("ipc.mockTxStep1")}
+                </h2>
+                <FileUploader
+                  label={t("fileUpload.mockTxJson")}
+                  accept=".json"
+                  helpText={t("fileUpload.mockTxHelp")}
+                  file={mockTxFile}
+                  onFileChange={setMockTxFile}
+                  disabled={isRunning}
+                />
+              </div>
+
+              {/* Script parameters */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-lg font-medium text-gray-900 mb-4">
+                  {t("ipc.mockTxStep2")}
+                </h2>
+                <MockTxParamsEditor
+                  params={mockTxParams}
+                  onChange={setMockTxParams}
+                  disabled={isRunning}
+                />
+              </div>
+            </>
+          )}
 
           {/* Execute / Clear buttons */}
           <div className="flex space-x-3">
             <button
-              onClick={handleExecute}
+              onClick={ipcExecMode === "binary" ? handleExecute : handleExecuteMockTx}
               disabled={!canRun}
               className={`
                 flex-1 py-3 px-4 rounded-lg font-medium text-white
