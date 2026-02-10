@@ -9,6 +9,7 @@ import { OutputConsole } from "./OutputConsole";
 import {
   checkIpcRunnerAvailability,
   executeIpcCall,
+  hexToBytes,
   type IpcRequest,
 } from "../lib/ipcRunner";
 import type { DebuggerResult } from "../lib/wasmer";
@@ -24,16 +25,6 @@ import { TxFetcher, FileUploader, type UploadedFile } from "./index";
 const CKB_HASH_PERSONALIZATION = new Uint8Array([
   99, 107, 98, 45, 100, 101, 102, 97, 117, 108, 116, 45, 104, 97, 115, 104,
 ]); // "ckb-default-hash"
-
-function hexToBytes(hex: string): Uint8Array {
-  const clean = hex.startsWith("0x") ? hex.slice(2) : hex;
-  if (clean.length === 0) return new Uint8Array(0);
-  const bytes = new Uint8Array(clean.length / 2);
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
-  }
-  return bytes;
-}
 
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes)
@@ -195,7 +186,8 @@ export function IpcPlayground() {
     try {
       const decoder = new TextDecoder();
       return decoder.decode(mockTxFile.content);
-    } catch {
+    } catch (e) {
+      console.warn("Failed to decode mock_tx file:", e);
       return "";
     }
   }, [mockTxFile]);
