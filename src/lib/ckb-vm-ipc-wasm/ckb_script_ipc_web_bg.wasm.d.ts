@@ -2,10 +2,10 @@
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
 export const __wbg_executeresult_free: (a: number, b: number) => void;
-export const executeresult_json_response: (a: number) => [number, number];
+export const execute_script: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
 export const executeresult_cycles: (a: number) => bigint;
 export const executeresult_debug_messages: (a: number) => any;
-export const execute_script: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+export const executeresult_json_response: (a: number) => [number, number];
 export const __wbindgen_externrefs: WebAssembly.Table;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

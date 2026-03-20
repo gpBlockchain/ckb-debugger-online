@@ -28,10 +28,10 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_executeresult_free: (a: number, b: number) => void;
-    readonly executeresult_json_response: (a: number) => [number, number];
+    readonly execute_script: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly executeresult_cycles: (a: number) => bigint;
     readonly executeresult_debug_messages: (a: number) => any;
-    readonly execute_script: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+    readonly executeresult_json_response: (a: number) => [number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

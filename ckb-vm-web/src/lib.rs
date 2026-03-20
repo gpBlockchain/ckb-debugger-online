@@ -466,8 +466,10 @@ pub fn execute_script(
         .map_err(|e| JsValue::from_str(&format!("Failed to load program: {:?}", e)))?;
 
     // The VM will process one request, write the response, then fail on the
-    // next read (EOF) which is expected. We ignore the exit code.
-    let _exit = machine.run();
+    // next read (EOF) which is expected – so a non-zero exit or an error after
+    // the response has been written is fine.  We only use the exit info when no
+    // response was captured to help the user diagnose problems.
+    let exit_result = machine.run();
     let cycles = machine.cycles();
 
     // Extract response from write buffer
@@ -475,9 +477,33 @@ pub fn execute_script(
     let debug_messages = debug_log.into_messages();
 
     if output.is_empty() {
-        return Err(JsValue::from_str(
-            "No response received from the script. Check that the binary is a valid CKB IPC server and the arguments are correct.",
-        ));
+        let mut error_msg =
+            String::from("No response received from the script.");
+
+        // Include VM exit status so the user can see WHY the script stopped.
+        match &exit_result {
+            Ok(code) => {
+                error_msg.push_str(&format!("\nVM exited with code: {}", code));
+            }
+            Err(e) => {
+                error_msg.push_str(&format!("\nVM error: {:?}", e));
+            }
+        }
+
+        error_msg.push_str(&format!("\nCycles used: {}", cycles));
+
+        if !debug_messages.is_empty() {
+            error_msg.push_str("\nDebug output:");
+            for msg in &debug_messages {
+                error_msg.push_str(&format!("\n  {}", msg));
+            }
+        }
+
+        error_msg.push_str(
+            "\n\nCheck that the binary is a valid CKB IPC server and the arguments are correct.",
+        );
+
+        return Err(JsValue::from_str(&error_msg));
     }
 
     // Parse the response packet
