@@ -167,7 +167,7 @@ export function IpcPlayground() {
       });
 
       // Show only the first line in the toast; full details are in the console
-      const shortMessage = errorMessage.split("\n")[0];
+      const shortMessage = errorMessage.split("\n")[0] || errorMessage;
       toast.addToast("error", `${t("error.executionError")}: ${shortMessage}`);
     } finally {
       setIsRunning(false);
