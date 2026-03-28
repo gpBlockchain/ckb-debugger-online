@@ -153,6 +153,10 @@ const en: TranslationDict = {
   "ipc.demoSourceCode": "Contract Source Code",
   "ipc.loadDemo": "Load Demo",
   "ipc.demoLoaded": "Demo loaded — click Fetch to download the binary, then Execute",
+  "ipc.step4": "4. Mock TX (Optional)",
+  "ipc.mockTxHelp": "Provide a mock_tx.json if the server contract uses CKB system calls that read transaction data",
+  "ipc.mockTxFile": "Mock TX JSON",
+  "ipc.mockTxFileHelp": "Upload mock_tx.json to provide transaction context for CKB syscalls",
 };
 
 // Chinese translations
@@ -297,6 +301,10 @@ const zh: TranslationDict = {
   "ipc.demoSourceCode": "合约源码",
   "ipc.loadDemo": "加载 Demo",
   "ipc.demoLoaded": "Demo 已加载 — 点击「获取」下载合约，然后点击「执行」",
+  "ipc.step4": "4. Mock TX（可选）",
+  "ipc.mockTxHelp": "如果服务端合约使用了 CKB 系统调用读取交易数据，请提供 mock_tx.json",
+  "ipc.mockTxFile": "Mock TX JSON",
+  "ipc.mockTxFileHelp": "上传 mock_tx.json 为 CKB 系统调用提供交易上下文",
 };
 
 // All translations
