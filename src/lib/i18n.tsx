@@ -153,6 +153,13 @@ const en: TranslationDict = {
   "ipc.demoSourceCode": "Contract Source Code",
   "ipc.loadDemo": "Load Demo",
   "ipc.demoLoaded": "Demo loaded — click Fetch to download the binary, then Execute",
+
+  // IPC execution mode
+  "ipc.modeBinary": "Binary IPC",
+  "ipc.modeMockTx": "Mock TX",
+  "ipc.mockTxStep1": "1. Upload Mock TX JSON",
+  "ipc.mockTxStep2": "2. Script Parameters",
+  "ipc.error.uploadMockTx": "Please upload mock_tx.json file first",
 };
 
 // Chinese translations
@@ -297,6 +304,13 @@ const zh: TranslationDict = {
   "ipc.demoSourceCode": "合约源码",
   "ipc.loadDemo": "加载 Demo",
   "ipc.demoLoaded": "Demo 已加载 — 点击「获取」下载合约，然后点击「执行」",
+
+  // IPC execution mode
+  "ipc.modeBinary": "Binary IPC",
+  "ipc.modeMockTx": "Mock TX",
+  "ipc.mockTxStep1": "1. 上传 Mock TX JSON",
+  "ipc.mockTxStep2": "2. 脚本参数",
+  "ipc.error.uploadMockTx": "请先上传 mock_tx.json 文件",
 };
 
 // All translations

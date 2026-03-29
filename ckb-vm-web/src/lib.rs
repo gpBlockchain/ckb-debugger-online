@@ -1,22 +1,23 @@
 use wasm_bindgen::prelude::*;
 
 use ckb_vm::cost_model::estimate_cycles;
-use ckb_vm::registers::{A0, A1, A2, A7};
+use ckb_vm::registers::{A0, A7};
 use ckb_vm::{Bytes, Memory, Register, SupportMachine, Syscalls};
 
 use std::sync::{Arc, Mutex};
 
-// ---------------------------------------------------------------------------
-// Wire-protocol constants (mirrored from ckb-script-ipc-common)
-// ---------------------------------------------------------------------------
+pub mod ipc_vlq;
+pub mod ipc_packet;
+pub mod ipc_syscall;
 
-const FIRST_FD_SLOT: u64 = 2;
+use ipc_packet::{RequestPacket, ResponsePacket};
+use ipc_syscall::{IpcBufferState, IpcClose, IpcInheritedFd, IpcRead, IpcWrite};
+
+// ---------------------------------------------------------------------------
+// Wire-protocol constants
+// ---------------------------------------------------------------------------
 
 // Syscall numbers
-const WRITE: i32 = 2605;
-const READ: i32 = 2606;
-const INHERITED_FD: i32 = 2607;
-const CLOSE: i32 = 2608;
 const DEBUG_PRINT_SYSCALL_NUMBER: i32 = 2177;
 
 // Unsupported syscall numbers (return error if called)
@@ -25,149 +26,9 @@ const WAIT: i32 = 2602;
 const PROCESS_ID: i32 = 2603;
 const PIPE: i32 = 2604;
 
-const SPAWN_YIELD_CYCLES_BASE: u64 = 800;
-
 // ---------------------------------------------------------------------------
-// VLQ encoding (Variable-Length Quantity)
+// Debug log collector
 // ---------------------------------------------------------------------------
-
-fn vlq_encode(mut value: u64) -> Vec<u8> {
-    let mut buffer = Vec::new();
-    loop {
-        let mut byte = (value & 0x7F) as u8;
-        value >>= 7;
-        if value != 0 {
-            byte |= 0x80;
-        }
-        buffer.push(byte);
-        if value == 0 {
-            break;
-        }
-    }
-    buffer
-}
-
-fn vlq_decode(bytes: &[u8]) -> Option<(u64, usize)> {
-    let mut value = 0u64;
-    let mut shift = 0;
-    for (i, &byte) in bytes.iter().enumerate() {
-        value |= ((byte & 0x7F) as u64) << shift;
-        if byte & 0x80 == 0 {
-            return Some((value, i + 1));
-        }
-        shift += 7;
-        if shift >= 64 {
-            return None;
-        }
-    }
-    None
-}
-
-// ---------------------------------------------------------------------------
-// Packet helpers (RequestPacket / ResponsePacket wire format)
-// ---------------------------------------------------------------------------
-
-/// Build a request packet: version(VLQ) + method_id(VLQ) + length(VLQ) + payload
-fn build_request_packet(json: &str) -> Vec<u8> {
-    let payload = json.as_bytes();
-    let mut buf = Vec::new();
-    buf.extend_from_slice(&vlq_encode(0)); // version
-    buf.extend_from_slice(&vlq_encode(0)); // method_id
-    buf.extend_from_slice(&vlq_encode(payload.len() as u64));
-    buf.extend_from_slice(payload);
-    buf
-}
-
-/// Parse a response packet: version(VLQ) + error_code(VLQ) + length(VLQ) + payload
-fn parse_response_packet(data: &[u8]) -> Result<(u64, String), String> {
-    let mut offset = 0;
-
-    // version
-    let (_version, n) =
-        vlq_decode(&data[offset..]).ok_or_else(|| "failed to decode version".to_string())?;
-    offset += n;
-
-    // error_code
-    let (error_code, n) =
-        vlq_decode(&data[offset..]).ok_or_else(|| "failed to decode error_code".to_string())?;
-    offset += n;
-
-    // payload length
-    let (length, n) = vlq_decode(&data[offset..])
-        .ok_or_else(|| "failed to decode payload length".to_string())?;
-    offset += n;
-
-    let end = offset + length as usize;
-    if end > data.len() {
-        return Err(format!(
-            "payload length {} exceeds available data {}",
-            length,
-            data.len() - offset
-        ));
-    }
-
-    let payload = String::from_utf8_lossy(&data[offset..end]).into_owned();
-    Ok((error_code, payload))
-}
-
-// ---------------------------------------------------------------------------
-// In-memory pipe (single-threaded, for WASM)
-// ---------------------------------------------------------------------------
-
-/// Shared buffer that the VM reads from (pre-filled with request data).
-#[derive(Clone)]
-struct ReadBuffer {
-    inner: Arc<Mutex<ReadBufferInner>>,
-}
-
-struct ReadBufferInner {
-    data: Vec<u8>,
-    pos: usize,
-}
-
-impl ReadBuffer {
-    fn new(data: Vec<u8>) -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(ReadBufferInner { data, pos: 0 })),
-        }
-    }
-
-    fn read(&self, buf: &mut [u8]) -> usize {
-        let mut inner = self.inner.lock().unwrap();
-        let remaining = inner.data.len() - inner.pos;
-        if remaining == 0 {
-            return 0; // EOF
-        }
-        let to_read = buf.len().min(remaining);
-        buf[..to_read].copy_from_slice(&inner.data[inner.pos..inner.pos + to_read]);
-        inner.pos += to_read;
-        to_read
-    }
-}
-
-/// Shared buffer that the VM writes to (collects response data).
-#[derive(Clone)]
-struct WriteBuffer {
-    inner: Arc<Mutex<Vec<u8>>>,
-}
-
-impl WriteBuffer {
-    fn new() -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    fn write(&self, data: &[u8]) {
-        self.inner.lock().unwrap().extend_from_slice(data);
-    }
-
-    fn into_data(self) -> Vec<u8> {
-        Arc::try_unwrap(self.inner)
-            .map(|m| m.into_inner().unwrap())
-            .unwrap_or_else(|arc| arc.lock().unwrap().clone())
-    }
-}
 
 /// Collects debug print output from the VM.
 #[derive(Clone)]
@@ -194,7 +55,7 @@ impl DebugLog {
 }
 
 // ---------------------------------------------------------------------------
-// CKB VM Syscall implementations for WASM
+// Debug print syscall
 // ---------------------------------------------------------------------------
 
 struct DebugSyscall {
@@ -237,134 +98,6 @@ impl<Mac: SupportMachine> Syscalls<Mac> for DebugSyscall {
 
         let s = String::from_utf8_lossy(&buffer).into_owned();
         self.log.push(s);
-        machine.set_register(A0, Mac::REG::from_u8(0));
-        Ok(true)
-    }
-}
-
-struct ReadSyscall {
-    buf: ReadBuffer,
-}
-
-impl<Mac: SupportMachine> Syscalls<Mac> for ReadSyscall {
-    fn initialize(&mut self, _machine: &mut Mac) -> Result<(), ckb_vm::error::Error> {
-        Ok(())
-    }
-
-    fn ecall(&mut self, machine: &mut Mac) -> Result<bool, ckb_vm::error::Error> {
-        if machine.registers()[A7].to_i32() != READ {
-            return Ok(false);
-        }
-        let fd = machine.registers()[A0].to_u64();
-        if fd != FIRST_FD_SLOT {
-            return Err(ckb_vm::error::Error::IO {
-                kind: std::io::ErrorKind::Other,
-                data: "can only read on pipe 2".into(),
-            });
-        }
-        let buffer_addr = machine.registers()[A1].clone();
-        let length_addr = machine.registers()[A2].clone();
-        let length = machine.memory_mut().load64(&length_addr)?.to_u64() as usize;
-        let mut tmp = vec![0u8; length];
-        let real_len = self.buf.read(&mut tmp);
-        machine
-            .memory_mut()
-            .store_bytes(buffer_addr.to_u64(), &tmp[..real_len])?;
-        machine
-            .memory_mut()
-            .store64(&length_addr, &Mac::REG::from_u64(real_len as u64))?;
-        machine.add_cycles_no_checking(SPAWN_YIELD_CYCLES_BASE)?;
-        machine.set_register(A0, Mac::REG::from_u8(0));
-        Ok(true)
-    }
-}
-
-struct WriteSyscall {
-    buf: WriteBuffer,
-}
-
-impl<Mac: SupportMachine> Syscalls<Mac> for WriteSyscall {
-    fn initialize(&mut self, _machine: &mut Mac) -> Result<(), ckb_vm::error::Error> {
-        Ok(())
-    }
-
-    fn ecall(&mut self, machine: &mut Mac) -> Result<bool, ckb_vm::error::Error> {
-        if machine.registers()[A7].to_i32() != WRITE {
-            return Ok(false);
-        }
-        let fd = machine.registers()[A0].to_u64();
-        if fd != (FIRST_FD_SLOT + 1) {
-            return Err(ckb_vm::error::Error::IO {
-                kind: std::io::ErrorKind::Other,
-                data: "can only write on pipe 3".into(),
-            });
-        }
-        let buffer_addr = machine.registers()[A1].clone();
-        let length_addr = machine.registers()[A2].clone();
-        let length = machine.memory_mut().load64(&length_addr)?.to_u64();
-        if length == 0 {
-            machine.set_register(A0, Mac::REG::from_u8(0));
-            return Ok(true);
-        }
-        let bytes = machine
-            .memory_mut()
-            .load_bytes(buffer_addr.to_u64(), length)?;
-        self.buf.write(&bytes);
-        machine
-            .memory_mut()
-            .store64(&length_addr, &Mac::REG::from_u64(bytes.len() as u64))?;
-        machine.add_cycles_no_checking(SPAWN_YIELD_CYCLES_BASE)?;
-        machine.set_register(A0, Mac::REG::from_u8(0));
-        Ok(true)
-    }
-}
-
-struct InheritedFdSyscall;
-
-impl<Mac: SupportMachine> Syscalls<Mac> for InheritedFdSyscall {
-    fn initialize(&mut self, _machine: &mut Mac) -> Result<(), ckb_vm::error::Error> {
-        Ok(())
-    }
-
-    fn ecall(&mut self, machine: &mut Mac) -> Result<bool, ckb_vm::error::Error> {
-        if machine.registers()[A7].to_i32() != INHERITED_FD {
-            return Ok(false);
-        }
-        let buffer_addr = machine.registers()[A0].clone();
-        let length_addr = machine.registers()[A1].clone();
-        let length = machine.memory_mut().load64(&length_addr)?;
-        if length.to_u64() < 2 {
-            return Err(ckb_vm::error::Error::IO {
-                kind: std::io::ErrorKind::Other,
-                data: "length of inherited fd is less than 2".into(),
-            });
-        }
-        let mut inherited_fd = [0u8; 16];
-        inherited_fd[0..8].copy_from_slice(&FIRST_FD_SLOT.to_le_bytes());
-        inherited_fd[8..16].copy_from_slice(&(FIRST_FD_SLOT + 1).to_le_bytes());
-        machine
-            .memory_mut()
-            .store_bytes(buffer_addr.to_u64(), &inherited_fd)?;
-        machine
-            .memory_mut()
-            .store64(&length_addr, &Mac::REG::from_u64(2))?;
-        machine.set_register(A0, Mac::REG::from_u8(0));
-        machine.add_cycles_no_checking(SPAWN_YIELD_CYCLES_BASE)?;
-        Ok(true)
-    }
-}
-
-struct CloseSyscall;
-
-impl<Mac: SupportMachine> Syscalls<Mac> for CloseSyscall {
-    fn initialize(&mut self, _machine: &mut Mac) -> Result<(), ckb_vm::error::Error> {
-        Ok(())
-    }
-
-    fn ecall(&mut self, machine: &mut Mac) -> Result<bool, ckb_vm::error::Error> {
-        if machine.registers()[A7].to_i32() != CLOSE {
-            return Ok(false);
-        }
         machine.set_register(A0, Mac::REG::from_u8(0));
         Ok(true)
     }
@@ -421,12 +154,14 @@ pub fn execute_script(
     args: &str,
     json_request: &str,
 ) -> Result<ExecuteResult, JsValue> {
-    // Build the request packet
-    let request_data = build_request_packet(json_request.trim());
+    // Build the request packet using ipc_packet module
+    let req_packet = RequestPacket::new(0, 0, json_request.trim().as_bytes().to_vec());
+    let request_data = req_packet.serialize();
 
-    // Set up in-memory I/O
-    let read_buf = ReadBuffer::new(request_data);
-    let write_buf = WriteBuffer::new();
+    // Set up shared IPC state
+    let ipc_state = Arc::new(Mutex::new(IpcBufferState::new(request_data)));
+
+    // Set up debug log
     let debug_log = DebugLog::new();
 
     // Build argument list
@@ -449,14 +184,10 @@ pub fn execute_script(
         .syscall(Box::new(DebugSyscall {
             log: debug_log.clone(),
         }))
-        .syscall(Box::new(ReadSyscall {
-            buf: read_buf,
-        }))
-        .syscall(Box::new(WriteSyscall {
-            buf: write_buf.clone(),
-        }))
-        .syscall(Box::new(InheritedFdSyscall))
-        .syscall(Box::new(CloseSyscall))
+        .syscall(Box::new(IpcRead::new(ipc_state.clone())))
+        .syscall(Box::new(IpcWrite::new(ipc_state.clone())))
+        .syscall(Box::new(IpcInheritedFd::new(ipc_state.clone())))
+        .syscall(Box::new(IpcClose::new(ipc_state.clone())))
         .build();
 
     // Load and run the program
@@ -472,8 +203,9 @@ pub fn execute_script(
     let exit_result = machine.run();
     let cycles = machine.cycles();
 
-    // Extract response from write buffer
-    let output = write_buf.into_data();
+    // Extract response from shared IPC state
+    let state = ipc_state.lock().unwrap();
+    let output = &state.response_data;
     let debug_messages = debug_log.into_messages();
 
     if output.is_empty() {
@@ -506,16 +238,21 @@ pub fn execute_script(
         return Err(JsValue::from_str(&error_msg));
     }
 
-    // Parse the response packet
-    let (error_code, json_response) =
-        parse_response_packet(&output).map_err(|e| JsValue::from_str(&e))?;
+    // Parse the response packet using ipc_packet module
+    let mut cursor = std::io::Cursor::new(output);
+    let resp = ResponsePacket::read_from(&mut cursor)
+        .map_err(|e| JsValue::from_str(&e))?;
 
-    if error_code != 0 {
+    if resp.error_code() != 0 {
+        let json_response = String::from_utf8_lossy(resp.payload()).into_owned();
         return Err(JsValue::from_str(&format!(
             "Server returned error code: {}. Response: {}",
-            error_code, json_response
+            resp.error_code(),
+            json_response
         )));
     }
+
+    let json_response = String::from_utf8_lossy(resp.payload()).into_owned();
 
     Ok(ExecuteResult {
         json_response,
